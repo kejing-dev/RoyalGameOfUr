@@ -137,10 +137,15 @@ fun ControlWindow() {
     }
 }
 
-/** Every page: the same skeleton, content centred vertically, blocks 16 dp apart. */
+/**
+ * Every page: the same skeleton. q2-1 (unified blank measure: blank above + below the content block <= 25 % of the window):
+ * the header sits at the top, the last row at the bottom and the blocks share the height in between (SpaceBetween),
+ * so the only blank outside the content is the window padding; the gaps inside stay small because every page carries
+ * enough content (no gap > 20 % of the window).
+ */
 @Composable
 private fun PageColumn(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically), content = content)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween, content = content)
 }
 
 /** Page header (56): a title (or the seat chip on the game page), a small mode line and [静音] on every page. */
@@ -210,6 +215,7 @@ private fun PlayPage(state: PlayState, settings: Settings, graph: Graph) {
             Phase.PICK, Phase.PICKED, Phase.MOVING -> if (state.humansTurn || state.phase == Phase.MOVING && state.anim?.move?.let { state.config.isHuman(it.side) } == true) {
                 PickGrid(state, graph)
                 MainButton(state, graph)
+                PieceStats(state)
             } else { NoticeCard(state); PieceStats(state) }
             else -> { NoticeCard(state); PieceStats(state) }
         }
@@ -349,7 +355,19 @@ private fun NoticeCard(state: PlayState) {
             !state.humansTurn -> whoName(state, state.side) + " · " + statusText(state)
             else -> statusText(state)
         }
-        Txt(text, "play/notice", style = PicoTheme.typography.titleMedium, color = RoyalColors.Ink, maxLines = 3, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Txt(text, "play/notice", style = PicoTheme.typography.titleMedium, color = RoyalColors.Ink, maxLines = 3)
+            // a second line keeps the card from being one thin line in a tall empty box (q2-1 inner blank band)
+            val pos = state.shownPos
+            val off = stringResource(if (state.config?.mode == Mode.TWO_PLAYER) R.string.off_count_2p else R.string.off_count_ai, pos.off(Ur.NEAR), pos.off(Ur.FAR))
+            Txt(off, "play/notice-off", style = PicoTheme.typography.bodyMedium, color = RoyalColors.InkSecondary)
+            val tip = when {
+                state.phase == Phase.NO_MOVE && (state.roll?.value ?: 0) == 0 -> R.string.mistake_1
+                state.phase == Phase.NO_MOVE -> R.string.mistake_2
+                else -> R.string.notice_ai_tip
+            }
+            Txt(stringResource(tip), "play/notice-tip", style = PicoTheme.typography.bodySmall, color = RoyalColors.InkSecondary, maxLines = 2)
+        }
     }
 }
 
@@ -466,13 +484,13 @@ private fun ConfirmPage(kind: ConfirmKind?, settings: Settings, graph: Graph, on
     val danger = kind != ConfirmKind.UNDO_2P || newGame
     PageColumn {
         Header(stringResource(R.string.tab_play).let { if (kind == ConfirmKind.EXIT) stringResource(R.string.settings_title) else if (newGame) stringResource(R.string.new_title) else it }, "confirm", settings, graph)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(RoyalColors.TagFace).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(44.dp), tint = RoyalColors.Ink)
-            Txt(stringResource(q), "confirm/${kind?.name ?: "NEW"}", style = PicoTheme.typography.titleLarge.copy(fontSize = 24.sp), color = RoyalColors.Ink, maxLines = 2)
+        Column(Modifier.fillMaxWidth().weight(1f).padding(vertical = 14.dp).clip(RoundedCornerShape(28.dp)).background(RoyalColors.TagFace).padding(24.dp), verticalArrangement = Arrangement.SpaceEvenly) {
+            Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(56.dp), tint = RoyalColors.Ink)
+            Txt(stringResource(q), "confirm/${kind?.name ?: "NEW"}", style = PicoTheme.typography.titleLarge.copy(fontSize = 28.sp), color = RoyalColors.Ink, maxLines = 2)
             Txt(stringResource(line), "confirm/line", style = PicoTheme.typography.bodyLarge, color = RoyalColors.InkSecondary, maxLines = 2)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SecondaryButton(stringResource(if (kind == ConfirmKind.UNDO_2P && !newGame) R.string.btn_never else R.string.btn_cancel), "confirm/cancel", onClick = onNo, modifier = Modifier.weight(1f).height(56.dp))
-                SecondaryButton(stringResource(yes), "confirm/yes", danger = danger, onClick = onYes, modifier = Modifier.weight(1f).height(56.dp))
+                SecondaryButton(stringResource(if (kind == ConfirmKind.UNDO_2P && !newGame) R.string.btn_never else R.string.btn_cancel), "confirm/cancel", onClick = onNo, modifier = Modifier.weight(1f).height(72.dp))
+                SecondaryButton(stringResource(yes), "confirm/yes", danger = danger, onClick = onYes, modifier = Modifier.weight(1f).height(72.dp))
             }
         }
         Txt(stringResource(R.string.lock_line), "confirm/lock", style = PicoTheme.typography.bodyMedium, color = PicoTheme.colorScheme.labelSecondary, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -495,7 +513,7 @@ private fun ResultPage(state: PlayState, settings: Settings, graph: Graph) {
     val time = "%d:%02d".format(secs / 60, secs % 60)
     PageColumn {
         Header(stringResource(R.string.tab_play), "result", settings, graph, sub = modeLine(state))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(RoyalColors.TagFace).padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).padding(vertical = 12.dp).clip(RoundedCornerShape(28.dp)).background(RoyalColors.TagFace).padding(22.dp), verticalArrangement = Arrangement.SpaceEvenly) {
             Txt(title, "result/title", style = PicoTheme.typography.titleLarge.copy(fontSize = 40.sp, fontWeight = FontWeight.Bold), color = RoyalColors.Ink)
             if (state.resigned) Txt(stringResource(R.string.result_resigned), "result/resigned", style = PicoTheme.typography.bodyMedium, color = RoyalColors.InkSecondary)
             val cells = listOf(
@@ -648,7 +666,7 @@ private fun SettingsPage(state: PlayState, settings: Settings, graph: Graph) {
         return
     }
     val onOff = listOf(true to stringResource(R.string.opt_on), false to stringResource(R.string.opt_off))
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
         Header(stringResource(R.string.settings_title), "settings", settings, graph)
         OptionRow(stringResource(R.string.settings_language), "settings/lang", labelWidth = 120.dp) {
             Segments(listOf(Language.SYSTEM to stringResource(R.string.lang_system), Language.ZH to stringResource(R.string.lang_zh), Language.EN to stringResource(R.string.lang_en)), settings.language, "settings/lang", { l -> upd { it.copy(language = l) } }, Modifier.weight(1f))
