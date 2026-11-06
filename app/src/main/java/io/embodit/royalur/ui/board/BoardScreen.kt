@@ -233,9 +233,9 @@ private fun SeatTag(st: PlayState, graph: Graph) {
                         if (cfg != null && st.winner == null && st.phase != Phase.SETUP) {
                             Box(Modifier.size(11.dp).clip(RoundedCornerShape(6.dp)).background(if (side == Ur.NEAR) RoyalColors.Obsidian else RoyalColors.Jasper).border(1.dp, RoyalColors.Ink, RoundedCornerShape(6.dp)))
                         }
-                        tagText(text, "seat/turn", 17)
+                        tagText(text, "seat/turn", 16)
                     }
-                    if (st.welcome || st.firstGame && st.turnNo < 2) tagText(stringResource(R.string.seat_panel_right), "seat/panel", 11, FontWeight.Normal, RoyalColors.InkSecondary)
+                    if (st.welcome || st.firstGame && st.turnNo < 2) tagText(stringResource(R.string.seat_panel_right), "seat/panel", 9, FontWeight.Normal, RoyalColors.InkSecondary)
                 }
             }
         }
@@ -252,7 +252,7 @@ private fun DiceTag(st: PlayState) {
     ) {
         if (roll != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                tagText(roll.value.toString(), "dice/value", 30, FontWeight.Bold)
+                tagText(roll.value.toString(), "dice/value", 25, FontWeight.Bold)
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { Tip(roll.dice[0]); Tip(roll.dice[1]) }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { Tip(roll.dice[2]); Tip(roll.dice[3]) }

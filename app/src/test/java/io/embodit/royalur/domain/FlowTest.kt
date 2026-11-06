@@ -223,6 +223,31 @@ class FlowTest {
         assertTrue(a2.st.turnNo >= 1 || a2.st.side == Ur.FAR)
     }
 
+    @Test fun openConfirmationLocksTheVolume() = runTest {
+        val h = Harness(this)
+        h.flow.newGame(GameConfig(Mode.AI, Ai.EASY, Ur.NEAR)); runCurrent()
+        h.flow.requestConfirm(ConfirmKind.RESTART)
+        h.flow.tapCup(); runCurrent()
+        assertEquals(Phase.TO_ROLL, h.st.phase) // the pinch on the cup did nothing
+        h.flow.cancelConfirm()
+        roll(h, 2)
+        h.flow.uiLocked = true // the window's exit / new-game card
+        h.flow.tapPiece(Ur.NEAR, 0)
+        assertEquals(Phase.PICK, h.st.phase)
+        h.flow.uiLocked = false
+        h.flow.panelPick(h.st.legal.first())
+        assertEquals(Phase.PICKED, h.st.phase)
+    }
+
+    @Test fun panelQuickMoveIsSelectPlusConfirm() = runTest {
+        val h = Harness(this)
+        h.flow.newGame(GameConfig(Mode.TWO_PLAYER, Ai.EASY, Ur.NEAR)); runCurrent()
+        roll(h, 3) // only the tower piece can move
+        assertEquals(1, h.st.legal.size)
+        h.flow.panelQuickMove()
+        assertEquals(Phase.MOVING, h.st.phase)
+    }
+
     @Test fun winEndsWithStatsAndTheAiWinIsNotAFanfare() = runTest {
         val h = Harness(this)
         h.flow.newGame(GameConfig(Mode.AI, Ai.EASY, Ur.NEAR)); runCurrent()

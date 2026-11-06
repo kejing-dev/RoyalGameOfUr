@@ -7,8 +7,8 @@ from PIL import Image
 
 DEV = os.environ.get("DEV", "emulator-5562")
 ADB = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
-POSES = {"win": "move right 0.55 meters then move forward 0.7 meters", "board": "move forward 1.2 meters"}
-CROPS = {"win": (900, 680, 1900, 2040), "board": (200, 1000, 2400, 2558), "full": None}
+POSES = {"reset": "", "left30": "move left 0.95 meters then move forward 0.25 meters then turn right 30 degrees", "right30": "move right 0.95 meters then move forward 0.25 meters then turn left 30 degrees", "fwd12": "move forward 1.2 meters", "win": "turn right 29 degrees then move forward 1.0 meters", "board": "move forward 1.2 meters"}
+CROPS = {"win": (330, 500, 1750, 2260), "board": (380, 1150, 2560, 2350), "full": None}
 pose_now = os.environ.get("POSE")
 
 
@@ -22,7 +22,8 @@ def pose(p):
     if p is None or p == pose_now:
         return
     subprocess.run(["pico-cli", "camera", "reset", "-d", DEV], capture_output=True)
-    subprocess.run(["pico-cli", "camera", "move", "-d", DEV, "--text", POSES[p]], capture_output=True)
+    if POSES[p]:
+        subprocess.run(["pico-cli", "camera", "move", "-d", DEV, "--text", POSES[p]], capture_output=True)
     pose_now = p
 
 

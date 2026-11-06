@@ -36,7 +36,7 @@ data class Settings(
     val lastSetup: GameSetup = GameSetup(),
 ) {
     companion object {
-        val TILTS = listOf(0, 15, 25)
+        val TILTS = listOf(0, 10, 15)
     }
 }
 
