@@ -177,4 +177,5 @@
     <string name="confirm_exit_line">这盘会存好，下次接着下。</string>
     <string name="confirm_undo_line">你和对面上一手都退回去。</string>
     <string name="confirm_new_line">正在下的这盘不保留。</string>
+    <string name="notice_ai_tip">它会先倒杯，再把要走的那颗亮一下，然后才走。</string>
 </resources>

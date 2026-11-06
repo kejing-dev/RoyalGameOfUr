@@ -177,4 +177,5 @@
     <string name="confirm_exit_line">Your game is saved. Pick it up next time.</string>
     <string name="confirm_undo_line">Your last move and theirs go back.</string>
     <string name="confirm_new_line">The game in progress is not kept.</string>
+    <string name="notice_ai_tip">It rolls the cup, lights the piece it picked, then moves it.</string>
 </resources>
