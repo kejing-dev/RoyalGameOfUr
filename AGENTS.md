@@ -1,19 +1,24 @@
 # 乌尔王族棋 Royal Game of Ur: project guidance
 
-Finkel-rules Royal Game of Ur for PICO OS 6 Shared Space, PICO Spatial SDK BOM 6.1.9, package `io.embodit.royalur`, v0.1.0.
-Design contract: spatial-app-factory `apps/royal-ur/design-package.json` (v1.1; profile A12 one main loop, `v2[]` not built:
+Finkel-rules Royal Game of Ur for PICO OS 6 Shared Space, PICO Spatial SDK BOM 6.1.9, package `io.embodit.royalur`, v0.1.1.
+Design contract: spatial-app-factory `apps/royal-ur/design-package.json` (v1.2 after QA round 1; profile A12 one main loop, `v2[]` not built:
 no Walker rules, no one-tap move, no replay / codes, no skins, no pause menu, no board flip, no third AI level).
 Skeleton from the Five Stones project (itself from kejing-dev/CloudAir v1.0.2: two containers, theme, sound pool, level gate);
 the tetrahedral dice solver is CloudAir's DiceSolver rewritten for four-sided dice; the Ur rules / AI / flow are new.
 
 ## Surfaces
-- **Board volume** (default container `RoyalBoard`, Volumetric 0.60 x 0.30 x 0.42 m, fixed scale, gravity aligned, uniform
+- **Board volume** (default container `RoyalBoard`, Volumetric 0.80 x 0.30 x 0.42 m, fixed scale, gravity aligned, uniform
   resize). `board.glb` (0.53 x 0.03 x 0.23 m inlaid box, 20 raised shell tiles with five patterns, 5 rosettes) on `tiltRoot`
-  (0 / 15 / 25°, pivot on the near-bottom edge), four towers (start col 5, finish col 6 in each own row), 14 pieces (obsidian
-  near / red jasper far), leather tray + cup in front (never tilt), 4 pyramid dice, seat tag + dice tag (AttachmentPanels,
-  left of the tray). Rings (lit / selected / target / last move / alert) are SDK tori with dark halos; rosette glow is a plane.
+  (0 / 10 / 15°, pivot on the near-bottom edge). v1.2 (QA q1-1, the reset eye is almost level): your start tower stands
+  left of the board, your finish tower and the cup right of it (flat, never tilt); the far side's towers stay in the A-row
+  gaps; the tray sits front-right, the seat tag + dice tag in the low zone in front (nothing in front of the board is
+  taller than 2.8 cm). 14 pieces (obsidian near / red jasper far) and all rings are scene children, tipped with the board
+  when on it. Rings: a coloured unlit ring (0.95) on top, a dark under-ring 1 mm wider each side and 0.6 mm lower (q1-2).
 - **Control window** (`RoyalControl`, Planar 560 x 620 dp, `Placement.right(RoyalBoard)`): native SpatialUI `TabBar`, four pages
-  对局 / 新局 / 规则 / 设置. Confirmations open in place. Settings [重开控制窗] closes and reopens beside the board (profile D44:
+  对局 / 新局 / 规则 / 设置. Every page: header with [静音], content vertically centred (blank <= 25 %, `tools/blank.py`).
+  Game page: dice box, then [掷骰] 132 + your-pieces stats, or one button per movable piece (T14: consequence + mini route,
+  `GameFlow.panelPick` = a pinch on that piece; [走 · …] when only one move), or a notice card. Confirmations are a whole-page
+  card and lock the volume (`GameFlow.uiLocked` / `confirm`). Settings switches are On / Off segments. Settings [重开控制窗] closes and reopens beside the board (profile D44:
   no "in front of you" in Shared Space). [退出应用] closes both containers, removes the tasks, exits the process.
 
 ## Code
@@ -28,7 +33,7 @@ the tetrahedral dice solver is CloudAir's DiceSolver rewritten for four-sided di
 | `ui/board/*` | `BoardScene` (all entities; per-frame placement in `onFrame`, driven by `BoardFrameSystem`), `BoardScreen` (taps, tags) |
 | `ui/control/*` | control window pages; every Text logs `OVERFLOW <tag>` when cut |
 | `platform/*` | Application / Graph, SoundPlayer, WindowCtl (+ LevelGate); debug builds add `DebugCommandReceiver` |
-| `tools/` | `build_models.py` (all GLBs, `--test-f` = F↑ tiles), `make_sounds.py`, `build_icon.py`, `loudness.py`, `shots.py`, `ru.sh` |
+| `tools/` | `realtap_game.py` (one whole game with real taps), `blank.py` (window blank band), `build_models.py` (all GLBs, `--test-f` = F↑ tiles), `make_sounds.py`, `build_icon.py`, `loudness.py`, `shots.py`, `ru.sh` |
 
 Rules - state - render: the scene only renders `PlayState`; a pinch on a collider (`cup`, `tray`, `board`, `sq:B3`, `pc:<side>:<p>`,
 `tw:<side>:0|15`) goes through `route()` to the same `GameFlow` calls the panel and the debug broadcast use.
@@ -36,7 +41,7 @@ Rules - state - render: the scene only renders `PlayState`; a pinch on a collide
 ## Build / test (kj-mbp-m5)
 ```bash
 export JAVA_HOME=~/.pico/primer-cli/jdk/jdk-21.0.13+9/Contents/Home
-./gradlew assembleDebug :app:testDebugUnitTest      # 26 JVM tests: rules, dice, AI strength, flow / undo / save, layout D35, level gate
+./gradlew assembleDebug :app:testDebugUnitTest      # 28 JVM tests: rules, dice, AI strength, flow / undo / save, occlusion rays (measured reset eye), level gate
 python3 tools/build_models.py ; python3 tools/make_sounds.py ; python3 tools/build_icon.py --icon512 icon.png
 DEV=emulator-5562 tools/ru.sh install
 ```
@@ -64,7 +69,7 @@ Reinstalling over a newer versionCode fails silently in `adb install -r`; `ru.sh
 | S14 确认 | `goto S14` (restart) · `resign` · `exitask` · 2P undo: `new "2p - me"`, two moves, `undo` · `confirm` / `no` | |
 | S15 非法 | `goto S15` | tapping a rival piece, held |
 | S16 恢复 | force-stop after a roll, relaunch | back to S05 with the same roll |
-Modifiers: `lang zh|en|system`, `reduced on|off`, `sound on|off`, `volume 0-2`, `hint on|off`, `coach on|off`, `tilt 0|15|25`,
+Modifiers: `lang zh|en|system`, `reduced on|off`, `sound on|off`, `volume 0-2`, `hint on|off`, `coach on|off`, `tilt 0|10|15`,
 `roll N`, `setup "<14 hex digits> [side]"` (near 7 then far 7, 0 = start tower, f = off), `new "<ai|2p> <easy|smart> <me|them|random>"`,
 `pick P`, `move`, `cancel`, `tap <collider>`, `freeze MS|off`, `hold on|off`, `seed N`, `reopen`, `closepanel`, `dump`, `evidence`.
 `freeze` only holds animations that start after it.

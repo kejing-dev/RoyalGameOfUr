@@ -10,15 +10,18 @@ import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.ModelEntity
 import com.pico.spatial.core.ecs.resource.Material
 import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.ShapeResource
 import com.pico.spatial.core.math.Color4
 import com.pico.spatial.core.math.Quat
 import com.pico.spatial.core.math.Vector3
 import io.embodit.royalur.domain.GameFlow
 import io.embodit.royalur.domain.Layout
+import io.embodit.royalur.domain.Move
 import io.embodit.royalur.domain.Phase
 import io.embodit.royalur.domain.PlayState
 import io.embodit.royalur.domain.Pos
 import io.embodit.royalur.domain.Settings
+import io.embodit.royalur.domain.Spot
 import io.embodit.royalur.domain.Sq
 import io.embodit.royalur.domain.Tetra
 import io.embodit.royalur.domain.Ur
@@ -34,17 +37,19 @@ internal class Models(
 )
 
 /**
- * Every entity of the board volume. Compose hands over [PlayState] + [Settings] through [apply]; everything that moves
- * (pieces, flights, the cup, the dice, rings, the rosette glow) is placed in [onFrame], driven by [BoardFrameSystem].
+ * Every entity of the board volume (design v1.2). Compose hands over [PlayState] + [Settings] through [apply]; everything
+ * that moves (pieces, flights, the cup, the dice, rings, the rosette glow) is placed in [onFrame], driven by
+ * [BoardFrameSystem].
  *
  * ```
  * root (volume centre)
  * └ sceneRoot (volume floor)
  *   ├ tiltRoot (near-bottom board edge, tipped about X)
- *   │ └ boardRoot (box top centre): board.glb, 20 square colliders "sq:A1", board collider "board", 4 towers,
- *   │   14 pieces (collider children "pc:<side>:<p>" / "tw:<side>:0|15"), lit / target / last / alert rings, rosette glow
- *   ├ tray "tray", cup pivot (cup.glb + collider "cup"), cup ring, 4 dice
- *   └ seat tag, dice tag (AttachmentPanels, upright, left of the tray), key light
+ *   │ └ boardRoot (box top centre): board.glb, 20 square colliders "sq:A1", board collider "board", the far side's 2 towers
+ *   ├ your 2 towers (beside the board, flat), tray, cup pivot (cup.glb + collider "cup"), 4 dice
+ *   ├ 14 pieces (collider children "pc:<side>:<p>" / "tw:<side>:0|15") and all rings: scene children, tipped with the
+ *   │   board when they stand on it
+ *   └ seat tag, dice tag (AttachmentPanels in the low zone in front), key light
  * ```
  */
 internal class BoardScene {
@@ -60,6 +65,9 @@ internal class BoardScene {
     private var diceTag: Entity? = null
 
     private var lay = Layout()
+    private var tiltQ = Quat(Vector3(1f, 0f, 0f), lay.theta)
+    private val flatQ = Quat.identity()
+    private val planeQ = Quat(Vector3(1f, 0f, 0f), (-PI / 2).toFloat())
     private var state = PlayState()
     private var settings = Settings()
     private var regionHalfY = -1f
@@ -67,6 +75,7 @@ internal class BoardScene {
     private val pieces = List(2) { ArrayList<Entity>() }
     private val pieceColliders = List(2) { ArrayList<Entity>() }
     private val colliderNames = HashMap<Entity, String>()
+    private val nearTowers = ArrayList<Entity>()
     private val litRings = ArrayList<ModelEntity>()
     private var selectRing: ModelEntity? = null
     private var targetRing: ModelEntity? = null
@@ -100,6 +109,16 @@ internal class BoardScene {
 
     private fun place(e: Entity, v: V3) = e.transform().setPosition(Vector3(v.x, v.y, v.z))
 
+    /** Puts a scene child at a spot, tipped with the board when the spot is on it. */
+    private fun place(e: Entity, s: Spot, extra: Quat? = null) {
+        place(e, s.at)
+        val q = if (s.tilted) tiltQ else flatQ
+        e.transform().setQuaternion(if (extra != null) q.times(extra) else q)
+    }
+
+    /** Lifts a spot by [dy] along its own up (the board normal when tilted). */
+    private fun up(s: Spot, dy: Float): Spot = if (!s.tilted) Spot(s.at + V3(0f, dy, 0f), false) else Spot(lay.toScene(lay.toLocal(s.at) + V3(0f, dy, 0f)), true)
+
     /** S00 stand-in: a plain box and a cylinder for the cup, shown until the models are in. */
     fun showFallback(slab: MeshResource, cyl: MeshResource, material: Material) {
         if (built || fallback.isNotEmpty()) return
@@ -113,7 +132,7 @@ internal class BoardScene {
         Log.i(TAG, "SCENE fallback shown S00")
     }
 
-    private fun collider(name: String, shape: com.pico.spatial.core.ecs.resource.ShapeResource, r: SceneResources): Entity = Entity().apply {
+    private fun collider(name: String, shape: ShapeResource, r: SceneResources): Entity = Entity().apply {
         setName(name)
         components.set(CollisionComponent(collisionShape = listOf(shape), physicsMaterial = r.physics))
         components.set(InteractableComponent())
@@ -121,8 +140,13 @@ internal class BoardScene {
 
     private fun clone(e: Entity): Entity = e.clone(Entity.CloneOptions(recursive = true, shouldShareMaterialInstance = true))!!.also { it.enabled = true }
 
-    private fun ring(mesh: MeshResource, m: Material, name: String, parent: Entity): ModelEntity =
-        ModelEntity(mesh, m).apply { setName(name); enabled = false; parent.addChild(this) }
+    /** q1-2: a coloured unlit ring on top and a dark under-ring only 1 mm wider each side, 0.6 mm lower. */
+    private fun ring(mesh: MeshResource, m: Material, name: String, halo: MeshResource?, r: SceneResources): ModelEntity {
+        val e = ModelEntity(mesh, m).apply { setName(name); enabled = false }
+        if (halo != null) e.addChild(ModelEntity(halo, r.dark).apply { setName("$name:halo"); transform().setPosition(Vector3(0f, -0.0006f, 0f)); transform().setScaleVector(Vector3(1f, 0.15f, 1f)) })
+        sceneRoot.addChild(e)
+        return e
+    }
 
     fun install(r: SceneResources, models: Models, seat: Entity?, diceTagEntity: Entity?) {
         if (built) { r.close(); return }
@@ -131,28 +155,36 @@ internal class BoardScene {
         boardRoot.addChild(clone(models.board).apply { setName("boardModel") })
         boardRoot.addChild(collider("board", r.boardShape, r).also { place(it, V3(0f, -Layout.BOX_T / 2, 0f)) })
         for (sq in Ur.SQUARES) boardRoot.addChild(collider("sq:${sq.name}", r.squareShape, r).also { place(it, lay.square(sq) + V3(0f, 0.0015f, 0f)) })
-        for (side in 0..1) for (finish in listOf(false, true)) {
-            val base = clone(models.tower).apply { setName("towerBase:$side:${if (finish) 15 else 0}") }
-            place(base, lay.tower(side, finish))
-            base.addChild(collider("tw:$side:${if (finish) 15 else 0}", r.towerShape, r).also { place(it, V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
+        // the far side's towers in the A-row gaps (tip with the board)
+        for (finish in listOf(false, true)) {
+            val base = clone(models.tower).apply { setName("towerBase:1:${if (finish) 15 else 0}") }
+            place(base, lay.farTower(finish))
+            base.addChild(collider("tw:1:${if (finish) 15 else 0}", r.towerShape, r).also { place(it, V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
             boardRoot.addChild(base)
+        }
+        // your towers beside the board (q1-1: nothing tall in front of or inside the near row)
+        for (finish in listOf(false, true)) {
+            val base = clone(models.tower).apply { setName("towerBase:0:${if (finish) 15 else 0}") }
+            place(base, if (finish) Layout.NEAR_FINISH else Layout.NEAR_START)
+            base.addChild(collider("tw:0:${if (finish) 15 else 0}", r.towerShape, r).also { place(it, V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
+            sceneRoot.addChild(base)
+            nearTowers += base
         }
         for (side in 0..1) repeat(Ur.PIECES) { i ->
             val e = clone(if (side == Ur.NEAR) models.pieceNear else models.pieceFar).apply { setName("piece:$side:$i") }
             val c = collider("pc:$side:x", r.pieceShape, r)
             e.addChild(c)
-            boardRoot.addChild(e)
+            sceneRoot.addChild(e)
             pieces[side] += e
             pieceColliders[side] += c
         }
-        fun halo(parent: ModelEntity, mesh: MeshResource) = parent.addChild(ModelEntity(mesh, r.dark).apply { setName("${parent.getName()}:halo"); transform().setPosition(Vector3(0f, -0.0004f, 0f)) })
-        repeat(Ur.PIECES) { i -> litRings += ring(r.ringPiece, r.cream, "litRing:$i", boardRoot).also { halo(it, r.haloPiece) } }
-        selectRing = ring(r.ringSelect, r.cream, "selectRing", boardRoot).also { halo(it, r.haloSelect) }
-        targetRing = ring(r.ringSquare, r.blue, "targetRing", boardRoot).also { halo(it, r.haloSquare) }
-        towerRing = ring(r.ringTower, r.gold, "towerRing", boardRoot)
-        repeat(2) { i -> lastRings += ring(r.ringSquare, r.faint, "lastRing:$i", boardRoot) }
-        alertRing = ring(r.ringSquare, r.red, "alertRing", boardRoot)
-        glowPlane = ring(r.glowPlane, r.glow, "rosetteGlow", boardRoot).also { it.transform().setQuaternion(Quat(Vector3(1f, 0f, 0f), (-PI / 2).toFloat())) }
+        repeat(Ur.PIECES) { i -> litRings += ring(r.ringPiece, r.cream, "litRing:$i", r.haloPiece, r) }
+        selectRing = ring(r.ringSelect, r.cream, "selectRing", r.haloSelect, r)
+        targetRing = ring(r.ringSquare, r.blue, "targetRing", r.haloSquare, r)
+        towerRing = ring(r.ringTower, r.gold, "towerRing", r.haloTower, r)
+        repeat(2) { i -> lastRings += ring(r.ringSquare, r.faint, "lastRing:$i", null, r) }
+        alertRing = ring(r.ringSquare, r.red, "alertRing", r.haloSquare, r)
+        glowPlane = ring(r.glowPlane, r.glow, "rosetteGlow", null, r)
 
         sceneRoot.addChild(clone(models.tray).apply { setName("trayModel"); place(this, lay.trayCentre()) })
         sceneRoot.addChild(collider("tray", r.trayShape, r).also { place(it, lay.trayCentre() + V3(0f, Layout.TRAY_H / 2, 0f)) })
@@ -162,8 +194,8 @@ internal class BoardScene {
         pivot.addChild(collider("cup", r.cupShape, r).also { place(it, V3(0f, 0.04f, 0f)) })
         sceneRoot.addChild(pivot)
         cupPivot = pivot
-        cupRing = ring(r.ringCup, r.cream, "cupRing", sceneRoot).also { place(it, lay.cupBase() + V3(0f, 0.002f, 0f)) }
-        alertCupRing = ring(r.ringCup, r.red, "alertCupRing", sceneRoot).also { place(it, lay.cupBase() + V3(0f, 0.004f, 0f)) }
+        cupRing = ModelEntity(r.ringCup, r.cream).apply { setName("cupRing"); enabled = false; place(this, lay.cupBase() + V3(0f, 0.002f, 0f)); sceneRoot.addChild(this) }
+        alertCupRing = ModelEntity(r.ringCup, r.red).apply { setName("alertCupRing"); enabled = false; place(this, lay.cupBase() + V3(0f, 0.004f, 0f)); sceneRoot.addChild(this) }
         repeat(4) { i -> dice += clone(models.die).apply { setName("die:$i"); enabled = false; sceneRoot.addChild(this) } }
         seatTag = seat?.also { sceneRoot.addChild(it) }
         diceTag = diceTagEntity?.also { sceneRoot.addChild(it) }
@@ -191,8 +223,9 @@ internal class BoardScene {
     private fun layout(force: Boolean = false) {
         if (!force && lay.tiltDeg == settings.tilt) return
         lay = Layout(settings.tilt)
+        tiltQ = Quat(Vector3(1f, 0f, 0f), lay.theta)
         place(tiltRoot, lay.tiltOrigin)
-        tiltRoot.transform().setQuaternion(Quat(Vector3(1f, 0f, 0f), lay.theta))
+        tiltRoot.transform().setQuaternion(tiltQ)
         place(boardRoot, lay.boardOffset)
         seatTag?.let { place(it, lay.seatCentre()) }
         diceTag?.let { place(it, lay.diceTagCentre()) }
@@ -210,9 +243,19 @@ internal class BoardScene {
 
     // ---- per frame ----
 
-    private data class Place(val at: V3, val name: String)
+    private data class Place(val at: Spot, val name: String)
 
-    private fun towerTop(side: Int, finish: Boolean, count: Int) = lay.slot(side, finish, (count - 1).coerceAtLeast(0))
+    private fun towerTop(side: Int, finish: Boolean, count: Int): Spot = lay.slot(side, finish, (count - 1).coerceAtLeast(0))
+
+    /** Where the piece of [side] at progress [p] stands right now (top of a tower for 0 / 15), lifted by [lift]. */
+    private fun pieceSpot(side: Int, p: Int, pos: Pos, lift: Float = 0f): Spot = when (p) {
+        Ur.START -> lay.slot(side, false, (pos.inStart(side) - 1).coerceAtLeast(0), lift)
+        Ur.OFF -> lay.slot(side, true, (pos.off(side) - 1).coerceAtLeast(0), lift)
+        else -> lay.onBoard(side, p, lift)
+    }
+
+    /** A ring around a piece: its base plus [dy] (colour 1.8 mm, the halo rides 0.6 mm under it). */
+    private fun ringAround(s: Spot, dy: Float = 0.0018f): Spot = up(s, -Layout.PIECE_H / 2 + dy)
 
     fun onFrame(dt: Float) {
         clock += dt
@@ -243,26 +286,26 @@ internal class BoardScene {
             val inOff = prog.indices.filter { it !in excluded && prog[it] == Ur.OFF }.size
             for (k in 0 until inStart) {
                 val lift = if (selected != null && selected.side == side && selected.from == Ur.START && k == inStart - 1) Layout.LIFT else 0f
-                places += Place(lay.slot(side, false, k) + V3(0f, lift, 0f), "tw:$side:0")
+                places += Place(lay.slot(side, false, k, lift), "tw:$side:0")
             }
             for (i in prog.indices) {
                 val p = prog[i]
                 if (i in excluded || p == Ur.START || p == Ur.OFF) continue
                 val lift = if (selected != null && selected.side == side && selected.from == p) Layout.LIFT else 0f
-                places += Place(lay.pieceOn(side, p, lift), "pc:$side:$p")
+                places += Place(lay.onBoard(side, p, lift), "pc:$side:$p")
             }
             for (k in 0 until inOff) places += Place(lay.slot(side, true, k), "tw:$side:15")
             if (m != null && stepping && side == m.side) {
-                val from = if (m.from == Ur.START) towerTop(side, false, anim.before.inStart(side)) else lay.pieceOn(side, m.from)
-                val to = if (m.off) lay.slot(side, true, anim.before.off(side)) else lay.pieceOn(side, m.to)
+                val from = if (m.from == Ur.START) towerTop(side, false, anim.before.inStart(side)) else lay.onBoard(side, m.from)
+                val to = if (m.off) lay.slot(side, true, anim.before.off(side)) else lay.onBoard(side, m.to)
                 val t = if (reduced) 1f else (e.toFloat() / step).coerceIn(0f, 1f)
-                places += Place(lay.arc(from, to, t, Layout.STEP_ARC), "fly")
+                places += Place(Spot(lay.arc(from.at, to.at, t, Layout.STEP_ARC), if (t < 0.5f) from.tilted else to.tilted), "fly")
             }
             if (capturing && side == Ur.other(m!!.side)) {
-                val from = lay.pieceOn(side, m.to)
+                val from = lay.onBoard(side, m.to)
                 val to = towerTop(side, false, st.pos.inStart(side))
                 val t = ((e - step).toFloat() / capDur).coerceIn(0f, 1f)
-                places += Place(lay.arc(from, to, t, Layout.CAPTURE_ARC), "fly")
+                places += Place(Spot(lay.arc(from.at, to.at, t, Layout.CAPTURE_ARC), if (t < 0.5f) from.tilted else to.tilted), "fly")
             }
             pieces[side].forEachIndexed { i, ent ->
                 val pl = places.getOrNull(i)
@@ -274,25 +317,20 @@ internal class BoardScene {
             }
         }
 
-        // ---------------- lit rings (S05 / S06), AI's pick (S10), hint, target
-        val litFroms: List<Pair<io.embodit.royalur.domain.Move, Boolean>> = when {
-            st.humansTurn && (st.phase == Phase.PICK || st.phase == Phase.PICKED) -> st.legal.map { it to (st.hint?.from == it.from) }
-            else -> emptyList()
-        }
-        fun pieceLocal(side: Int, p: Int, lift: Float): V3 = if (p == Ur.START) towerTop(side, false, st.pos.inStart(side)) + V3(0f, lift, 0f) else lay.pieceOn(side, p, lift)
+        // ---------------- lit rings (S05 / S06), the AI's pick (S10), hint, target
+        val lit: List<Pair<Move, Boolean>> = if (st.humansTurn && (st.phase == Phase.PICK || st.phase == Phase.PICKED)) st.legal.map { it to (st.hint?.from == it.from) } else emptyList()
         litRings.forEachIndexed { i, ring ->
-            val (mv, hinted) = litFroms.getOrNull(i) ?: run { ring.enabled = false; return@forEachIndexed }
+            val (mv, hinted) = lit.getOrNull(i) ?: run { ring.enabled = false; return@forEachIndexed }
             if (selected != null && selected.from == mv.from) { ring.enabled = false; return@forEachIndexed }
-            val at = pieceLocal(mv.side, mv.from, 0f) - V3(0f, Layout.PIECE_H / 2 - 0.0012f, 0f)
-            place(ring, at)
-            ring.components[ModelComponent::class.java]?.materials?.set(0, when { hinted -> r.amber; st.phase == Phase.PICKED -> r.faint; else -> r.cream })
-            val k = if (reduced || st.phase == Phase.PICKED) 1f else 1f + 0.05f * sin(clock * 4f)
+            place(ring, ringAround(pieceSpot(mv.side, mv.from, st.pos)))
+            ring.components[ModelComponent::class.java]?.materials?.set(0, when { hinted -> r.amber; st.phase == Phase.PICKED -> r.creamFaint; else -> r.cream })
+            val k = if (reduced || st.phase == Phase.PICKED) 1f else 1f + 0.04f * sin(clock * 4f)
             ring.transform().setScaleVector(Vector3(k, 1f, k))
             ring.enabled = true
         }
         selectRing?.let { ring ->
             if (selected != null) {
-                place(ring, pieceLocal(selected.side, selected.from, Layout.LIFT) - V3(0f, Layout.PIECE_H / 2 - 0.0012f, 0f))
+                place(ring, ringAround(pieceSpot(selected.side, selected.from, st.pos, Layout.LIFT)))
                 ring.components[ModelComponent::class.java]?.materials?.set(0, if (st.hint?.from == selected.from) r.amber else r.cream)
                 ring.enabled = true
             } else ring.enabled = false
@@ -300,16 +338,16 @@ internal class BoardScene {
         val target = st.picked?.takeIf { st.phase == Phase.PICKED && st.humansTurn }
         targetRing?.let { ring ->
             if (target != null && !target.off) {
-                place(ring, lay.square(Ur.square(target.side, target.to)) + V3(0f, 0.0012f, 0f))
+                place(ring, lay.squareSpot(Ur.square(target.side, target.to), 0.0018f))
                 ring.components[ModelComponent::class.java]?.materials?.set(0, when { target.captures -> r.orange; target.rosette -> r.gold; else -> r.blue })
-                val k = if (reduced) 1f else 1f + 0.06f * sin(clock * 6f)
+                val k = if (reduced) 1f else 1f + 0.05f * sin(clock * 6f)
                 ring.transform().setScaleVector(Vector3(k, 1f, k))
                 ring.enabled = true
             } else ring.enabled = false
         }
         towerRing?.let { ring ->
             if (target != null && target.off) {
-                place(ring, lay.slot(target.side, true, st.pos.off(target.side)) - V3(0f, Layout.PIECE_H / 2 - 0.001f, 0f))
+                place(ring, ringAround(lay.slot(target.side, true, st.pos.off(target.side))))
                 ring.enabled = true
             } else ring.enabled = false
         }
@@ -318,7 +356,7 @@ internal class BoardScene {
         val lastSquares = listOfNotNull(last?.from?.takeIf { it in 1..14 }, last?.to?.takeIf { it in 1..14 }).map { Ur.square(last!!.side, it) }
         lastRings.forEachIndexed { i, ring ->
             val sq = lastSquares.getOrNull(i)
-            if (sq != null) { place(ring, lay.square(sq) + V3(0f, 0.0008f, 0f)); ring.enabled = true } else ring.enabled = false
+            if (sq != null) { place(ring, lay.squareSpot(sq, 0.0012f)); ring.enabled = true } else ring.enabled = false
         }
 
         // ---------------- alert flash (S15)
@@ -326,7 +364,7 @@ internal class BoardScene {
         val flashing = al != null && st.freezeMs == null && now - al.at < 600 && ((now - al.at) / 100) % 2 == 0L ||
             (al != null && st.freezeMs != null)
         alertRing?.let { ring ->
-            val at = al?.target?.let { alertLocal(it) }
+            val at = al?.target?.let { alertSpot(it) }
             if (flashing && at != null) { place(ring, at); ring.enabled = true } else ring.enabled = false
         }
         alertCupRing?.enabled = flashing && al?.target == "cup"
@@ -342,13 +380,13 @@ internal class BoardScene {
                 val key = "${glowSq.name}:${st.turnNo}:${st.rosettes}"
                 if (key != glowKey) { glowKey = key; glowStart = now }
                 val k = if (reduced) 1f else (elapsed(glowStart).toFloat() / 400f).coerceIn(0.05f, 1f)
-                place(g, lay.square(glowSq) + V3(0f, 0.0009f, 0f))
+                place(g, lay.squareSpot(glowSq, 0.0009f), planeQ)
                 g.transform().setScaleVector(Vector3(k, k, 1f))
                 g.enabled = true
             } else { g.enabled = false; glowKey = null }
         }
 
-        // ---------------- cup: its ring at S03 / S08, its tilt while throwing (S04)
+        // ---------------- cup: its ring at S03 / S08, the pour while throwing (S04)
         cupRing?.let { ring ->
             val on = st.humansTurn && st.confirm == null && (st.phase == Phase.TO_ROLL || st.phase == Phase.AGAIN)
             ring.enabled = on
@@ -358,16 +396,14 @@ internal class BoardScene {
         val de = show?.let { elapsed(it.startedAt) } ?: Long.MAX_VALUE
         cupPivot?.let { pivot ->
             val total = GameFlow.ROLL_MS
-            val (lift, ang) = if (show == null || reduced || de >= total) 0f to 0f else {
-                val u = when {
-                    de < 200 -> de / 200f
-                    de < 600 -> 1f
-                    else -> 1f - (de - 600) / 300f
-                }.coerceIn(0f, 1f)
-                (0.03f * u) to (70f * u)
-            }
-            place(pivot, lay.cupBase() + V3(0f, lift, 0f))
-            pivot.transform().setQuaternion(Quat(Vector3(0f, 0f, 1f), Math.toRadians(ang.toDouble()).toFloat()))
+            // lift 3 cm and slide over the tray's right end in 200 ms, tip left 70°, back home by 900 ms
+            val u = if (show == null || reduced || de >= total) 0f else when {
+                de < 200 -> de / 200f
+                de < 600 -> 1f
+                else -> 1f - (de - 600) / 300f
+            }.coerceIn(0f, 1f)
+            place(pivot, lay.cupBase().lerp(Layout.CUP_POUR, u) + V3(0f, 0.03f * u, 0f))
+            pivot.transform().setQuaternion(Quat(Vector3(0f, 0f, 1f), Math.toRadians((70f * u).toDouble()).toFloat()))
         }
 
         // ---------------- dice
@@ -389,9 +425,8 @@ internal class BoardScene {
                     val f0 = thr.frames.first()
                     val start = V3(lane.x + f0.position[0].toFloat(), lane.y + f0.position[1].toFloat(), lane.z + f0.position[2].toFloat())
                     if (de < rel + 120) {
-                        val mouth = lay.cupBase() + V3(-0.045f, 0.06f, 0f)
-                        val u = (de - rel) / 120f
-                        mouth.lerp(start, u) to f0.quaternion
+                        val mouth = Layout.CUP_POUR + V3(-0.045f, 0.09f, 0f)
+                        mouth.lerp(start, (de - rel) / 120f) to f0.quaternion
                     } else {
                         val p = thr.sample((de - rel - 120) * speed / 1000.0)
                         V3(lane.x + p.position[0].toFloat(), lane.y + p.position[1].toFloat(), lane.z + p.position[2].toFloat()) to p.quaternion
@@ -408,15 +443,15 @@ internal class BoardScene {
         }
     }
 
-    /** Board-local point where the red alert ring goes for an alert target tag. */
-    private fun alertLocal(target: String): V3? {
+    /** Where the red alert ring goes for an alert target tag. */
+    private fun alertSpot(target: String): Spot? {
         val f = target.split(":")
         return when (f[0]) {
-            "sq" -> Sq.parse(f[1])?.let { lay.square(it) + V3(0f, 0.0012f, 0f) }
+            "sq" -> Sq.parse(f[1])?.let { lay.squareSpot(it, 0.0018f) }
             "tw" -> {
                 val side = f[1].toInt(); val finish = f[2] == "15"
                 val n = if (finish) state.pos.off(side) else state.pos.inStart(side)
-                lay.slot(side, finish, (n - 1).coerceAtLeast(0)) + V3(0f, Layout.PIECE_H / 2 + 0.001f, 0f)
+                ringAround(lay.slot(side, finish, (n - 1).coerceAtLeast(0)))
             }
             else -> null
         }
@@ -424,7 +459,7 @@ internal class BoardScene {
 
     fun evidence(): String {
         val dz = dice.mapIndexed { i, d -> "d$i=${if (d.enabled) d.transform().position else "off"}" }.joinToString(" ")
-        return "tilt=${lay.tiltDeg} seat=${lay.seatCentre()} diceTag=${lay.diceTagCentre()} cup=${lay.cupBase()} " +
+        return "tilt=${lay.tiltDeg} seat=${lay.seatCentre()} diceTag=${lay.diceTagCentre()} cup=${lay.cupBase()} nearStart=${Layout.NEAR_START} " +
             "C1=${lay.toScene(lay.square(Sq(2, 1)))} A8=${lay.toScene(lay.square(Sq(0, 8)))} halfY=$regionHalfY $dz restH=${Tetra.REST_HEIGHT_M}"
     }
 

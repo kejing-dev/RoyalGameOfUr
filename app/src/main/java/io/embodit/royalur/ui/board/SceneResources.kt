@@ -40,7 +40,9 @@ internal class SceneResources private constructor() {
     lateinit var haloPiece: MeshResource; private set
     lateinit var haloSelect: MeshResource; private set
     lateinit var haloSquare: MeshResource; private set
+    lateinit var haloTower: MeshResource; private set
     lateinit var dark: Material; private set
+    lateinit var creamFaint: Material; private set
 
     lateinit var cream: Material; private set
     lateinit var blue: Material; private set
@@ -79,23 +81,26 @@ internal class SceneResources private constructor() {
             fun <T : Resource> T.keep(): T { toGlobal(); synchronized(r.all) { r.all += this }; return this }
             val io = Dispatchers.IO
             listOf(
-                async(io) { r.ringPiece = MeshResource.createTorus(outerRingRadius = 0.0272f, innerRingRadius = 0.0248f).keep() },
-                async(io) { r.ringSelect = MeshResource.createTorus(outerRingRadius = 0.0300f, innerRingRadius = 0.0250f).keep() },
-                async(io) { r.ringSquare = MeshResource.createTorus(outerRingRadius = 0.0262f, innerRingRadius = 0.0226f).keep() },
+                // q1-2 (design theme.ringLayering, piece R = 22.5 mm): lit R+3..R+8, selected R+2..R+11, target 22..28 mm;
+                // the dark under-ring is 1 mm wider on each side only
+                async(io) { r.ringPiece = MeshResource.createTorus(outerRingRadius = 0.0305f, innerRingRadius = 0.0255f).keep() },
+                async(io) { r.ringSelect = MeshResource.createTorus(outerRingRadius = 0.0335f, innerRingRadius = 0.0245f).keep() },
+                async(io) { r.ringSquare = MeshResource.createTorus(outerRingRadius = 0.0280f, innerRingRadius = 0.0220f).keep() },
                 async(io) { r.ringCup = MeshResource.createTorus(outerRingRadius = 0.0500f, innerRingRadius = 0.0455f).keep() },
-                async(io) { r.ringTower = MeshResource.createTorus(outerRingRadius = 0.0330f, innerRingRadius = 0.0290f).keep() },
+                async(io) { r.ringTower = MeshResource.createTorus(outerRingRadius = 0.0340f, innerRingRadius = 0.0290f).keep() },
                 async(io) { r.glowPlane = MeshResource.createPlane(0.054f, 0.054f, 0.004f).keep() },
-                // dark halos under the light rings: a cream ring on a cream tile is only 1.1:1 (D13 graphical >= 3:1)
-                async(io) { r.haloPiece = MeshResource.createTorus(outerRingRadius = 0.0300f, innerRingRadius = 0.0234f).keep() },
-                async(io) { r.haloSelect = MeshResource.createTorus(outerRingRadius = 0.0326f, innerRingRadius = 0.0240f).keep() },
-                async(io) { r.haloSquare = MeshResource.createTorus(outerRingRadius = 0.0290f, innerRingRadius = 0.0212f).keep() },
-                async(io) { r.dark = unlit(Color(0xFF1C1A17)).keep() },
-                async(io) { r.cream = unlit(Color(0xFFF5F0E6)).keep() },
-                async(io) { r.blue = unlit(Color(0xFF3F7FD9)).keep() },
-                async(io) { r.orange = unlit(Color(0xFFD8842A)).keep() },
-                async(io) { r.gold = unlit(Color(0xFFE0B040)).keep() },
-                async(io) { r.amber = unlit(Color(0xFFE0A040)).keep() },
-                async(io) { r.red = unlit(Color(0xFFC8423F)).keep() },
+                async(io) { r.haloPiece = MeshResource.createTorus(outerRingRadius = 0.0315f, innerRingRadius = 0.0245f).keep() },
+                async(io) { r.haloSelect = MeshResource.createTorus(outerRingRadius = 0.0345f, innerRingRadius = 0.0235f).keep() },
+                async(io) { r.haloSquare = MeshResource.createTorus(outerRingRadius = 0.0290f, innerRingRadius = 0.0210f).keep() },
+                async(io) { r.haloTower = MeshResource.createTorus(outerRingRadius = 0.0350f, innerRingRadius = 0.0280f).keep() },
+                async(io) { r.dark = unlit(Color(0xFF1C1A17), 0.5f).keep() },
+                async(io) { r.creamFaint = unlit(Color(0xFFF5F0E6), 0.5f).keep() },
+                async(io) { r.cream = unlit(Color(0xFFF5F0E6), 0.95f).keep() },
+                async(io) { r.blue = unlit(Color(0xFF3F7FD9), 0.95f).keep() },
+                async(io) { r.orange = unlit(Color(0xFFD8842A), 0.95f).keep() },
+                async(io) { r.gold = unlit(Color(0xFFE0B040), 0.95f).keep() },
+                async(io) { r.amber = unlit(Color(0xFFE0A040), 0.95f).keep() },
+                async(io) { r.red = unlit(Color(0xFFC8423F), 0.95f).keep() },
                 async(io) { r.faint = unlit(Color(0xFF7FA8E8), 0.55f).keep() },
                 async(io) { r.glow = unlit(Color(0xFFF2C94C), 0.6f).keep() },
                 async(io) { r.squareShape = ShapeResource.createBox(Vector3(0.060f, 0.003f, 0.060f)).keep() },

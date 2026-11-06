@@ -66,6 +66,8 @@ data class PlayState(
     val coach: Coach? = null,
     val restored: Boolean = false,
     val savedAvailable: Boolean = false,
+    /** Turn number of the saved game ([继续上一盘 · 第 n 回合]). */
+    val savedTurn: Int = 0,
     /** Debug freeze: animations stop this many ms after their start and notices hold. */
     val freezeMs: Long? = null,
     /** When the freeze was set: only animations that start after it are held. */
@@ -136,6 +138,8 @@ class GameFlow(
     private var rng = Random(seed)
     var aiSeed: Int = seed
     var holdThinking: Boolean = false
+    /** A window-only confirmation (exit / new game) is open: the volume is locked too (design input.confirmLock). */
+    @Volatile var uiLocked: Boolean = false
     /** Debug `roll N`: the next throw shows exactly N white tips. */
     var forcedRoll: Int? = null
 
@@ -221,7 +225,8 @@ class GameFlow(
 
     fun toMenu() {
         cancelJobs()
-        set(PlayState(phase = Phase.SETUP, savedAvailable = store.load() != null, hintOn = s.hintOn))
+        val saved = store.load()
+        set(PlayState(phase = Phase.SETUP, savedAvailable = saved != null, savedTurn = saved?.now?.turnNo ?: 0, hintOn = s.hintOn))
         log("STATE S02")
     }
 
@@ -249,6 +254,7 @@ class GameFlow(
     fun tapCup(fromPanel: Boolean = false) {
         val st = s
         log("TAP cup phase=${st.phase.id} panel=$fromPanel")
+        if (st.confirm != null || uiLocked) { log("LOCKED by confirm (S14)"); return }
         if (!st.humansTurn) return
         when (st.phase) {
             Phase.TO_ROLL -> { if (st.confirm == null) roll() }
@@ -260,6 +266,7 @@ class GameFlow(
     fun tapTray() {
         val st = s
         log("TAP tray phase=${st.phase.id}")
+        if (st.confirm != null || uiLocked) { log("LOCKED by confirm (S14)"); return }
         if (!st.humansTurn) return
         when (st.phase) {
             Phase.TO_ROLL -> alert(AlertKind.CUP_HERE, "cup")
@@ -272,6 +279,7 @@ class GameFlow(
     fun tapPiece(side: Int, p: Int) {
         val st = s
         log("TAP piece side=$side p=$p phase=${st.phase.id} picked=${st.picked?.from}")
+        if (st.confirm != null || uiLocked) { log("LOCKED by confirm (S14)"); return }
         if (!st.humansTurn) return
         val tag = tagOf(side, p)
         when (st.phase) {
@@ -301,6 +309,7 @@ class GameFlow(
     /** A pinch on an empty playing square (squares with a piece route to [tapPiece]). */
     fun tapSquare(sq: Sq) {
         val st = s
+        if (st.confirm != null || uiLocked) { log("LOCKED by confirm (S14)"); return }
         st.pos.at(sq)?.let { (side, i) -> tapPiece(side, st.pos.of(side)[i]); return }
         log("TAP square ${sq.name} phase=${st.phase.id}")
         if (!st.humansTurn) return
@@ -317,8 +326,20 @@ class GameFlow(
 
     /** A pinch on the board frame / anywhere that is not a square, piece, tower or the cup: back to S05. */
     fun tapEmpty() {
+        if (s.confirm != null || uiLocked) return
         log("TAP empty phase=${s.phase.id}")
         if (s.phase == Phase.PICKED && s.humansTurn) cancelPick()
+    }
+
+    /** Control-window pick button (T14): exactly a pinch on that piece in the volume (same path, same state). */
+    fun panelPick(m: Move) { log("PANEL pick ${m.from}>${m.to}"); tapPiece(m.side, m.from) }
+
+    /** Control-window [走 · 后果] when only one move is legal: select + confirm in one press. */
+    fun panelQuickMove() {
+        val m = s.legal.singleOrNull() ?: return
+        log("PANEL quick ${m.from}>${m.to}")
+        if (s.phase == Phase.PICK) tapPiece(m.side, m.from)
+        if (s.phase == Phase.PICKED) tapPiece(m.side, m.from)
     }
 
     /** Panel [走这颗]. */
