@@ -35,7 +35,8 @@ the tetrahedral dice solver is CloudAir's DiceSolver rewritten for four-sided di
 | `platform/*` | Application / Graph, SoundPlayer, WindowCtl (+ LevelGate); debug builds add `DebugCommandReceiver` |
 | `tools/` | `realtap_game.py` (one whole game with real taps), `blank.py` (window blank band), `build_models.py` (all GLBs, `--test-f` = F↑ tiles), `make_sounds.py`, `build_icon.py`, `loudness.py`, `shots.py`, `ru.sh` |
 
-Rules - state - render: the scene only renders `PlayState`; a pinch on a collider (`cup`, `tray`, `board`, `sq:B3`, `pc:<side>:<p>`,
+Rules - state - render: the scene only renders `PlayState`. Volume input goes through the factory board-input template
+(`ui/board/input/BoardInput.kt`, D50: short drags count as taps, targets resolved up the parent chain); a pinch on a collider (`cup`, `tray`, `board`, `sq:B3`, `pc:<side>:<p>`,
 `tw:<side>:0|15`) goes through `route()` to the same `GameFlow` calls the panel and the debug broadcast use.
 
 ## Build / test (kj-mbp-m5)
@@ -77,6 +78,7 @@ Modifiers: `lang zh|en|system`, `reduced on|off`, `sound on|off`, `volume 0-2`, 
 ## Known
 - 3D taps (cup, pieces, squares) are not reachable by `pico-cli interact` (only the 2D window publishes nodes); on the emulator they
   were driven by the debug broadcast through the same `route()`. Controller ray / gaze + pinch on 4.5 cm pieces: headset only.
-- Sounds are SoundPool (not spatial). Seat / dice tags face +Z (no head pose in Shared Space for a billboard).
+- Sounds are SoundPool (not spatial). Physical sounds are Kenney CC0 recordings (`tools/import_cc0_sounds.py`); UI cues are synthesised (`tools/make_sounds.py`).
+- Hover: a faint ring where a resting pointer is (`BoardScene.setHover`, debug `hover <collider>`); whether Shared Space delivers hover pointer events is not verified on a headset. Seat / dice tags face +Z (no head pose in Shared Space for a billboard).
 - Shared Space places the volume where the last task was; after `adb install -r` with the app running it may come back off-centre:
   exit with [退出应用] (removes the task), reset the camera, relaunch.
