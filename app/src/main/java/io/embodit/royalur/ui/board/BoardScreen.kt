@@ -49,7 +49,14 @@ import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.dsl.registerSystem
 import com.pico.spatial.ui.foundation.dsl.unregisterSystem
-import com.pico.spatial.ui.foundation.gesture.detectSpatialTapGesture
+import com.pico.spatial.ui.foundation.gesture.TargetEntity
+import com.pico.spatial.ui.foundation.gesture.detectSpatialPointerEvent
+import com.pico.spatial.ui.geometry.Offset3D
+import io.embodit.royalur.ui.board.input.BoardInputConfig
+import io.embodit.royalur.ui.board.input.BoardInputListener
+import io.embodit.royalur.ui.board.input.InputSource
+import io.embodit.royalur.ui.board.input.TargetResolver
+import io.embodit.royalur.ui.board.input.boardInput
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import io.embodit.royalur.R
 import io.embodit.royalur.domain.Layout
@@ -130,11 +137,16 @@ fun BoardScreen() {
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { viewSize = it }
+            // D50: the factory board-input template (taps + short drags that the system reports as drags, targets
+            // resolved up the parent chain) for hand ray, controller ray and eye-hand alike.
+            .boardInput(remember(scene) { BoardTargets(scene) }, remember(graph) { BoardListener(graph) }, BoardInputConfig(logTag = TAG))
+            // D50 hover: a light ring on the square / piece the pointer rests on (state is never changed by hover).
             .pointerInput(Unit) {
-                detectSpatialTapGesture(context = context, targetedToEntity = null) { tap ->
-                    val name = tap.targetEntity?.getName()
-                    Log.i(TAG, "PINCH target=$name kind=${tap.interactionKind}")
-                    route(graph, name)
+                detectSpatialPointerEvent(context, TargetEntity.any()) { infos ->
+                    val info = infos.firstOrNull()
+                    if (info != null && !info.isUpEvent()) scene.setHover(BoardTargets(scene).resolveName(info.targetedEntity))
+                    else if (info != null) scene.setHover(null)
+                    false
                 }
             },
         attachments = {
@@ -173,6 +185,26 @@ fun BoardScreen() {
             scene.apply(state, settings)
         },
     )
+}
+
+/** Hit entity (or an ancestor) -> the collider name the game knows: squares, pieces (via their collider child), towers, cup, tray, board. */
+internal class BoardTargets(private val scene: BoardScene) : TargetResolver<String> {
+    override fun resolve(entity: Entity): String? {
+        val name = runCatching { entity.getName() }.getOrNull() ?: return null
+        if (BoardScene.hitOf(name) != BoardScene.Companion.EmptyHit) return name
+        scene.colliderNameOf(entity)?.let { return it }
+        return if (name == "board" || name == "boardModel") "board" else null
+    }
+
+    fun resolveName(entity: Entity?): String? = io.embodit.royalur.ui.board.input.resolveUp(entity, this).first
+}
+
+/** Every resolved tap goes through [route] (the same calls the panel and the debug broadcast make). */
+internal class BoardListener(private val graph: Graph) : BoardInputListener<String> {
+    override fun onTap(target: String?, source: InputSource, position: Offset3D?) {
+        Log.i(TAG, "PINCH target=$target src=${source.label}")
+        route(graph, target)
+    }
 }
 
 /** Collider name -> the one flow call (the same calls the debug broadcast makes). */

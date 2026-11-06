@@ -94,6 +94,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
             "roll" -> flow.forcedRoll = a.toIntOrNull()?.coerceIn(0, 4)
             "cup" -> flow.tapCup()
             "tap" -> route(graph, a)
+            "hover" -> SceneHolder.scene?.setHover(a.ifBlank { null }?.takeIf { it != "off" })
             "pick" -> a.toIntOrNull()?.let { flow.tapPiece(flow.state.value.side, it) }
             "move" -> flow.moveButton()
             "cancel" -> flow.cancelPick()

@@ -73,7 +73,7 @@ val VOLUME_PERCENT = intArrayOf(35, 65, 100)
 
 /**
  * Short effects from assets/sounds/<name>.wav (+ _2 / _3 variants) through a SoundPool. Repeated sounds (dice, piece
- * landing) rotate their variants with a random rate of 0.93-1.07 that never repeats back to back (design sound.variation).
+ * landing, CC0 recordings) rotate their 2-4 variants with a random rate of 0.95-1.05 that never repeats back to back (design sound.variation).
  */
 class SoundPlayer(context: Context) {
     @Volatile var enabled = true
@@ -87,14 +87,14 @@ class SoundPlayer(context: Context) {
     private val random = Random(11)
     private val lastRate = HashMap<Sound, Float>()
     private val lastVariant = HashMap<Sound, Int>()
-    private val varied = setOf(Sound.THROW, Sound.LAND, Sound.PLACE)
+    private val varied = setOf(Sound.SHAKE, Sound.THROW, Sound.LAND, Sound.SELECT, Sound.PLACE, Sound.CAPTURE, Sound.OFF)
 
     init {
         pool.setOnLoadCompleteListener { _, id, status -> if (status == 0) synchronized(loaded) { loaded += id } }
         for (s in Sound.entries) {
             val base = s.name.lowercase()
             val found = ArrayList<Int>()
-            for (name in listOf("$base.wav", "${base}_2.wav", "${base}_3.wav")) {
+            for (name in listOf("$base.wav", "${base}_2.wav", "${base}_3.wav", "${base}_4.wav")) {
                 runCatching { context.assets.openFd("sounds/$name").use { fd -> found += pool.load(fd, 1) } }
             }
             if (found.isNotEmpty()) ids[s] = found else Log.w(TAG, "no sound for $s")
@@ -108,9 +108,9 @@ class SoundPlayer(context: Context) {
         var rate = 1f
         var v = 0
         if (s in varied) {
-            rate = 0.93f + random.nextFloat() * 0.14f
+            rate = 0.95f + random.nextFloat() * 0.10f
             val last = lastRate[s] ?: 1f
-            if (abs(rate - last) < 0.015f) rate = if (rate < 1f) rate + 0.03f else rate - 0.03f
+            if (abs(rate - last) < 0.01f) rate = if (rate < 1f) rate + 0.02f else rate - 0.02f
             lastRate[s] = rate
             v = random.nextInt(variants.size)
             if (v == lastVariant[s] && variants.size > 1) v = (v + 1) % variants.size

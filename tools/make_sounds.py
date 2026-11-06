@@ -167,60 +167,13 @@ if '--check' in sys.argv:
     sys.exit(0)
 
 
-# shake: the leather cup lifted, dice rattling inside (short)
-r = random.Random(1)
-x = silence(0.22)
-for i in range(5):
-    x = place(x, knock(0.5 + 0.1 * r.random(), 0.8, r, seconds=0.05), 0.02 + i * 0.035)
-x = place(x, 0.4 * swish(0.2, 600, 1400, r, attack=0.03), 0.0)
-write('shake', x, -2)
-
-# throw: dice pouring out and tumbling on the leather tray, three variants
-for v, seed in ((1, 11), (2, 12), (3, 13)):
-    r = random.Random(seed)
-    x = silence(0.75)
-    x = place(x, 0.35 * swish(0.5, 900, 500, r, attack=0.05), 0.0)
-    t = 0.05
-    for i in range(10 + v):
-        x = place(x, knock(0.35 + 0.5 * r.random(), 0.6 + 0.3 * r.random(), r, seconds=0.06), t)
-        t += 0.03 + 0.05 * r.random()
-    write('throw' if v == 1 else f'throw_{v}', x, -1)
-
-# land: the dice settle, a short double tap, three variants
-for v, seed in ((1, 21), (2, 22), (3, 23)):
-    r = random.Random(seed)
-    x = silence(0.16)
-    x = place(x, knock(1.0, 0.7, r, seconds=0.08), 0.0)
-    x = place(x, knock(0.55, 0.6, r, seconds=0.07), 0.06)
-    write('land' if v == 1 else f'land_{v}', x, -1)
-
-# select: a light tick of a fingertip on a shell-inlaid piece
-write('select', lowpass(0.8 * mode(1250, 0.008, 0.05) + 0.3 * mode(2300, 0.004, 0.05), 3000, 1), -3)
-
-# place: a piece set down on a shell square (shell on wood), three variants
-for v, seed in ((1, 31), (2, 32), (3, 33)):
-    r = random.Random(seed)
-    x = knock(1.0, 0.55 + 0.1 * v, r, seconds=0.1)
-    x = place(x, 0.25 * mode(1900 + 80 * v, 0.01, 0.06), 0.0)
-    write('place' if v == 1 else f'place_{v}', x, -1)
-
-# capture: short whoosh, then the piece knocks onto its start tower
-r = random.Random(41)
-x = silence(0.6)
-x = place(x, 0.6 * swish(0.42, 500, 1500, r, attack=0.04), 0.0)
-x = place(x, knock(1.0, 0.5, r, seconds=0.1), 0.44)
-write('capture', x, -1)
+# v0.1.1: the physical sounds (shake, throw, land, select, place, capture, off) are CC0 recordings now
+# (tools/import_cc0_sounds.py, Kenney casino-audio); this script only makes the UI cues below.
 
 bell = ((1, 1.0), (2.0, 0.18), (3.0, 0.05), (4.2, 0.03))
 # rosette: one small bell
 write('rosette', note(1318.5, 0.8, 0.4, partials=((1, 1.0), (2.76, 0.15), (5.4, 0.04)), attack=0.003), -1)
 
-# off: a dull thump onto the finish tower and a two-note phrase
-x = silence(0.8)
-x = place(x, 0.9 * mode(300, 0.05, 0.2) + 0.4 * mode(640, 0.03, 0.2), 0.0)
-x = place(x, note(784.0, 0.4, 0.2, partials=bell), 0.12)
-x = place(x, note(1046.5, 0.5, 0.3, partials=bell), 0.26)
-write('off', x, -1)
 
 # nomove: a soft "hm", two low notes close together
 x = silence(0.5)

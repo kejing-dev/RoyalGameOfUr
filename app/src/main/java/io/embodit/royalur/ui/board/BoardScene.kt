@@ -88,6 +88,23 @@ internal class BoardScene {
     private var cupPivot: Entity? = null
     private val dice = ArrayList<Entity>()
 
+    private var hoverRing: ModelEntity? = null
+    @Volatile private var hover: String? = null
+
+    /** D50 hover: the collider name under a resting pointer (null = none). Light feedback only. */
+    fun setHover(name: String?) {
+        if (name == hover) return
+        hover = name
+        if (name != null) Log.i(TAG, "HOVER $name")
+    }
+
+    /** The collider name of a piece entity (its collider child), for hits on the piece's GLB meshes. */
+    fun colliderNameOf(e: Entity): String? {
+        for (side in 0..1) pieces[side].forEachIndexed { i, p -> if (p === e) return colliderNames[pieceColliders[side][i]] }
+        nearTowers.forEach { t -> if (t === e) return t.getName().replace("towerBase", "tw") }
+        return null
+    }
+
     private var clock = 0f
     private var glowKey: String? = null
     private var glowStart = 0L
@@ -185,6 +202,7 @@ internal class BoardScene {
         repeat(2) { i -> lastRings += ring(r.ringSquare, r.faint, "lastRing:$i", null, r) }
         alertRing = ring(r.ringSquare, r.red, "alertRing", r.haloSquare, r)
         glowPlane = ring(r.glowPlane, r.glow, "rosetteGlow", null, r)
+        hoverRing = ring(r.ringSquare, r.creamFaint, "hoverRing", null, r)
 
         sceneRoot.addChild(clone(models.tray).apply { setName("trayModel"); place(this, lay.trayCentre()) })
         sceneRoot.addChild(collider("tray", r.trayShape, r).also { place(it, lay.trayCentre() + V3(0f, Layout.TRAY_H / 2, 0f)) })
@@ -359,6 +377,12 @@ internal class BoardScene {
             if (sq != null) { place(ring, lay.squareSpot(sq, 0.0012f)); ring.enabled = true } else ring.enabled = false
         }
 
+        // ---------------- hover (D50): a faint cream ring where the pointer rests; never changes state
+        hoverRing?.let { ring ->
+            val at = hover?.let { hoverSpot(it) }
+            if (at != null) { place(ring, at); ring.enabled = true } else ring.enabled = false
+        }
+
         // ---------------- alert flash (S15)
         val al = st.alert
         val flashing = al != null && st.freezeMs == null && now - al.at < 600 && ((now - al.at) / 100) % 2 == 0L ||
@@ -440,6 +464,16 @@ internal class BoardScene {
             d.transform().setQuaternion(Quat(q[0].toFloat(), q[1].toFloat(), q[2].toFloat(), q[3].toFloat()))
             d.transform().setScaleVector(Vector3(scale, scale, scale))
             d.enabled = true
+        }
+    }
+
+    private fun hoverSpot(name: String): Spot? {
+        val f = name.split(":")
+        return when (f[0]) {
+            "sq" -> Sq.parse(f[1])?.let { lay.squareSpot(it, 0.0010f) }
+            "pc" -> f.getOrNull(2)?.toIntOrNull()?.takeIf { it in 1..14 }?.let { ringAround(lay.onBoard(f[1].toInt(), it), 0.0010f) }
+            "tw" -> alertSpot(name)
+            else -> null
         }
     }
 
