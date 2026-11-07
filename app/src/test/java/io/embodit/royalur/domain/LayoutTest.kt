@@ -27,6 +27,33 @@ class LayoutTest {
         println("occlusion rays checked: $rays")
     }
 
+    /**
+     * v0.1.4 headset feedback (「杯子…不会挡住我射线到终点那个木头上」): from the sit / stand / sit ±30° eyes, the ray to the
+     * top of your finish tower — the bare wood (0 off) and the top piece of every stack (1..7 off) — never meets the cup or
+     * anything else. From the level emulator-reset eyes (0.15 m, i.e. eye height = the volume centre) a 2 cm block behind
+     * anything taller than ~2.4 cm cannot be seen at all, so there the ray goes to the tower's tap column (its collider,
+     * the full 7-piece height) above the cup: the tower stays pointable from every eye.
+     */
+    @Test fun raysToTheFinishTowerClearTheCup() {
+        var rays = 0
+        for (tilt in Settings.TILTS) {
+            val l = Layout(tilt)
+            for ((eyeName, eye) in l.eyes()) {
+                val level = eyeName.startsWith("reset")
+                val tops = if (level) listOf(Layout.TOWER_H + 7 * Layout.PIECE_H - 0.004f) else (0..7).map { n -> Layout.TOWER_H + n * Layout.PIECE_H }
+                for (y in tops) for (finish in listOf(true, false)) {
+                    val base = if (finish) Layout.NEAR_FINISH else Layout.NEAR_START
+                    val target = base + V3(0f, y, 0f)
+                    rays++
+                    // the tower's own box is the target, not an obstacle
+                    val hit = l.obstacles().firstOrNull { o -> !o.name.startsWith("near tower") && (if (o.local) o.box.hitBySegment(l.toLocal(eye), l.toLocal(target)) else o.box.hitBySegment(eye, target)) }
+                    assertNull("$tilt° $eyeName -> ${if (finish) "finish" else "start"} tower y=$y", hit?.name)
+                }
+            }
+        }
+        println("tower rays checked: $rays")
+    }
+
     @Test fun measuredResetEyeLooksAlmostLevel() {
         val l = Layout(15)
         val eye = l.eyes().getValue("reset d=1.9 az=0")
@@ -48,7 +75,10 @@ class LayoutTest {
                 if (top > Layout.LOW_ZONE + 1e-4f) {
                     // rule 2: tall things only beside the board, front edge z <= +0.08 (design)
                     val inner = minOf(abs(o.box.min.x), abs(o.box.max.x))
-                    assertTrue("${o.name} is tall but inside |x| 0.29 (inner $inner)", inner >= 0.29f - 0.0026f)
+                    // v0.1.4 headset feedback ("杯子…靠盘子近一点"): the lowered cup may stand right beside the board edge;
+                    // the square / piece occlusion test above still has to pass with it there
+                    val bound = if (o.name == "cup") Layout.BOX_W / 2 + 0.005f else 0.29f - 0.0026f
+                    assertTrue("${o.name} is tall but inside |x| $bound (inner $inner)", inner >= bound)
                     assertTrue("${o.name} front edge $frontZ > 0.08", frontZ <= 0.08f + 1e-3f)
                 } else if (o.box.min.z - Layout.D_Z > 0.115f) {
                     // rule 1: everything in front of the board stays under 0.028

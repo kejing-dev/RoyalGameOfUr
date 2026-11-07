@@ -406,7 +406,7 @@ def build_tray():
 
 def build_cup():
     m = Mesh()
-    r0, r1, H, wall, SEG = 0.04, 0.035, 0.07, 0.004, 40
+    r0, r1, H, wall, SEG = 0.036, 0.031, 0.05, 0.004, 40  # v0.1.4: lower + slimmer (Layout.CUP_R / CUP_H)
     def ring(r, y):
         return [(r * math.cos(2 * math.pi * i / SEG), y, r * math.sin(2 * math.pi * i / SEG)) for i in range(SEG)]
     slope = (r0 - r1) / H
