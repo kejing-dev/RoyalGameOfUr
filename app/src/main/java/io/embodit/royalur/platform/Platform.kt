@@ -79,15 +79,21 @@ class SoundPlayer(context: Context) {
     @Volatile var enabled = true
     @Volatile var volumeLevel = 2
 
-    private val pool = SoundPool.Builder().setMaxStreams(8)
+    private val pool = SoundPool.Builder().setMaxStreams(MAX_STREAMS)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
         .build()
     private val ids = HashMap<Sound, List<Int>>()
+    /** Sample id -> (duration ms, peak linear) read from the WAV, for the mix headroom below. */
+    private val meta = HashMap<Int, Pair<Long, Float>>()
     private val loaded = HashSet<Int>()
     private val random = Random(11)
     private val lastRate = HashMap<Sound, Float>()
     private val lastVariant = HashMap<Sound, Int>()
     private val varied = setOf(Sound.SHAKE, Sound.THROW, Sound.LAND, Sound.SELECT, Sound.PLACE, Sound.CAPTURE, Sound.OFF)
+    /** The stream each event is playing right now (one instance per event, profile D51). */
+    private val playing = HashMap<Sound, Int>()
+    /** Streams still sounding: stream id -> (end time, peak contribution). */
+    private val active = HashMap<Int, Pair<Long, Float>>()
 
     init {
         pool.setOnLoadCompleteListener { _, id, status -> if (status == 0) synchronized(loaded) { loaded += id } }
@@ -95,12 +101,22 @@ class SoundPlayer(context: Context) {
             val base = s.name.lowercase()
             val found = ArrayList<Int>()
             for (name in listOf("$base.wav", "${base}_2.wav", "${base}_3.wav", "${base}_4.wav")) {
-                runCatching { context.assets.openFd("sounds/$name").use { fd -> found += pool.load(fd, 1) } }
+                runCatching {
+                    val id = context.assets.openFd("sounds/$name").use { fd -> pool.load(fd, 1) }
+                    found += id
+                    meta[id] = context.assets.open("sounds/$name").use { readMeta(it.readBytes()) }
+                }
             }
             if (found.isNotEmpty()) ids[s] = found else Log.w(TAG, "no sound for $s")
         }
     }
 
+    /**
+     * Plays [s] once. D51 (2026-11-06 headset feedback "the select sound blows up"): the same event never overlaps itself
+     * (the previous stream of that event is stopped first), and the mix keeps headroom: the volumes of the streams still
+     * sounding are summed by peak and a new stream is scaled down so the sum stays under -1 dBFS (a soft limiter in
+     * front of SoundPool, which has no limiter of its own).
+     */
     fun play(s: Sound) {
         if (!enabled) return
         val variants = ids[s] ?: return
@@ -118,8 +134,59 @@ class SoundPlayer(context: Context) {
         }
         val id = variants[v]
         if (synchronized(loaded) { id !in loaded }) return
-        pool.play(id, vol, vol, 1, 0, rate)
+        val now = SystemClock.uptimeMillis()
+        synchronized(active) {
+            playing.remove(s)?.let { pool.stop(it); active.remove(it) }
+            active.entries.removeAll { it.value.first <= now }
+            val (durMs, peak) = meta[id] ?: (500L to 0.9f)
+            val others = active.values.sumOf { it.second.toDouble() }.toFloat()
+            val gain = MixHeadroom.gain(vol * peak, others)
+            val stream = pool.play(id, vol * gain, vol * gain, 1, 0, rate)
+            if (stream != 0) {
+                playing[s] = stream
+                active[stream] = (now + (durMs / rate).toLong()) to vol * gain * peak
+            }
+        }
     }
 
     fun release() = runCatching { pool.release() }
+
+    companion object {
+        const val MAX_STREAMS = 6
+
+        /** Duration (ms) and peak (linear) of a 16-bit PCM WAV. */
+        fun readMeta(b: ByteArray): Pair<Long, Float> {
+            var i = 12
+            var rate = 22050; var ch = 1
+            while (i + 8 <= b.size) {
+                val id = String(b, i, 4)
+                val n = (b[i + 4].toInt() and 255) or ((b[i + 5].toInt() and 255) shl 8) or ((b[i + 6].toInt() and 255) shl 16) or ((b[i + 7].toInt() and 255) shl 24)
+                if (id == "fmt ") {
+                    ch = (b[i + 10].toInt() and 255) or ((b[i + 11].toInt() and 255) shl 8)
+                    rate = (b[i + 12].toInt() and 255) or ((b[i + 13].toInt() and 255) shl 8) or ((b[i + 14].toInt() and 255) shl 16)
+                }
+                if (id == "data") {
+                    var peak = 0
+                    var j = i + 8
+                    val end = minOf(b.size - 1, i + 8 + n)
+                    while (j < end) { val v = abs(((b[j + 1].toInt() shl 8) or (b[j].toInt() and 255)).toShort().toInt()); if (v > peak) peak = v; j += 2 }
+                    return (n / 2L / ch * 1000 / rate) to peak / 32768f
+                }
+                i += 8 + n + (n and 1)
+            }
+            return 500L to 0.9f
+        }
+    }
+}
+
+/** The mix limiter rule, kept pure for the unit test: the summed peaks of everything sounding stay <= -1 dBFS. */
+object MixHeadroom {
+    const val CEILING = 0.891f // -1 dBFS
+
+    /** Gain (0..1) for a new stream whose peak at full gain is [newPeak], with [othersPeak] already sounding. */
+    fun gain(newPeak: Float, othersPeak: Float): Float {
+        if (newPeak <= 0f) return 1f
+        val room = CEILING - othersPeak
+        return (room / newPeak).coerceIn(0.15f, 1f)
+    }
 }

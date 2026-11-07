@@ -120,21 +120,15 @@ fun ControlWindow() {
         }
     }
 
-    TabBar(followViewpoints = setOf(ViewPoint.Front, ViewPoint.Left)) {
-        listOf(
-            Triple(Page.PLAY, R.drawable.ic_tab_play, R.string.tab_play),
-            Triple(Page.NEW, R.drawable.ic_tab_new, R.string.tab_new),
-            Triple(Page.RULES, R.drawable.ic_tab_rules, R.string.tab_rules),
-            Triple(Page.SETTINGS, R.drawable.ic_tab_settings, R.string.tab_settings),
-        ).forEach { (page, icon, label) ->
-            item(
-                selected = Ui.page == page,
-                onClick = { Ui.page = page },
-                mainContent = { Icon(painter = painterResource(icon), contentDescription = stringResource(label)) },
-                supportContent = { Txt(stringResource(label), "tabbar/${page.name}", style = PicoTheme.typography.labelMedium) },
-            )
-        }
-    }
+    // The native TabBar is its own system window: resolve the labels here, in the app-language context, and pass
+    // plain strings in (ui_gates tabbar-lang; English cold start shows four English tabs).
+    val tabs = listOf(
+        Triple(Page.PLAY, R.drawable.ic_tab_play, stringResource(R.string.tab_play)),
+        Triple(Page.NEW, R.drawable.ic_tab_new, stringResource(R.string.tab_new)),
+        Triple(Page.RULES, R.drawable.ic_tab_rules, stringResource(R.string.tab_rules)),
+        Triple(Page.SETTINGS, R.drawable.ic_tab_settings, stringResource(R.string.tab_settings)),
+    )
+    NativeTabs(tabs)
 }
 
 /**
@@ -706,4 +700,19 @@ internal fun exitApp(context: Context, graph: Graph) {
         am.appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
     }
     Handler(Looper.getMainLooper()).postDelayed({ exitProcess(0) }, 600)
+}
+
+/** The native SpatialUI TabBar (D8); labels arrive already resolved in the app language. */
+@Composable
+private fun NativeTabs(tabs: List<Triple<Page, Int, String>>) {
+    TabBar(followViewpoints = setOf(ViewPoint.Front, ViewPoint.Left)) {
+        tabs.forEach { (page, icon, label) ->
+            item(
+                selected = Ui.page == page,
+                onClick = { Ui.page = page },
+                mainContent = { Icon(painter = painterResource(icon), contentDescription = label) },
+                supportContent = { Txt(label, "tabbar/${page.name}", style = PicoTheme.typography.labelMedium) },
+            )
+        }
+    }
 }

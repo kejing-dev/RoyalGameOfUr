@@ -239,6 +239,25 @@ class FlowTest {
         assertEquals(Phase.PICKED, h.st.phase)
     }
 
+    @Test fun selectSwitchAndCancelAllPlayTheSameSoftSound() = runTest {
+        val h = Harness(this)
+        h.flow.newGame(GameConfig(Mode.TWO_PLAYER, Ai.EASY, Ur.NEAR)); runCurrent()
+        h.flow.setup(pos(listOf(5, 2), emptyList()), Ur.NEAR); runCurrent()
+        roll(h, 1)
+        h.sounds.clear()
+        repeat(5) { i -> h.flow.tapPiece(Ur.NEAR, if (i % 2 == 0) 5 else 2) } // quick switching between two lit pieces
+        h.flow.cancelPick()
+        assertEquals(List(6) { Sound.SELECT }, h.sounds)
+        assertEquals(Phase.PICK, h.st.phase)
+    }
+
+    @Test fun mixHeadroomKeepsTheSumUnderMinusOneDb() {
+        val c = io.embodit.royalur.platform.MixHeadroom.CEILING
+        assertEquals(1f, io.embodit.royalur.platform.MixHeadroom.gain(0.126f, 0f), 1e-6f)
+        val g = io.embodit.royalur.platform.MixHeadroom.gain(0.89f, 0.5f)
+        assertTrue(0.5f + 0.89f * g <= c + 1e-4f)
+    }
+
     @Test fun panelQuickMoveIsSelectPlusConfirm() = runTest {
         val h = Harness(this)
         h.flow.newGame(GameConfig(Mode.TWO_PLAYER, Ai.EASY, Ur.NEAR)); runCurrent()
