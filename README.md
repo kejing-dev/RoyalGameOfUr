@@ -17,7 +17,7 @@ PICO 空间应用（PICO OS 6 · Spatial SDK 6.1.9 · Shared Space 立体窗口 
 - **真骰子**：四颗角锥骰从皮杯里倒出来，物理滚停，白尖朝上的数就是步数（0–4）
 - **两种走法**：点棋盘上亮着的子，或者在控制窗里挑那颗子再按 [走]；吃子、踩花、出局都先预览再确认
 - **吃子 / 玫瑰花**：被吃的子沿弧线飞回起点塔；踩到玫瑰花再掷一次，花格上的子不能被吃
-- **对手**：电脑（轻松 / 较强）或两人同玩；悔一步 / 重做、提示开关
+- **对手**：电脑（轻松 / 聪明）或两人同玩；悔一步 / 重做、提示开关
 - **规则页**：Irving Finkel 复原规则，一图看懂路线；新手常错的几条单独列出
 - 手柄射线、手势射线、眼手（注视 + 捏合）都能点；静音开关在主页面；设置里可直接退出应用（二次确认）；中英双语；本机运行，不联网、不要账号
 
@@ -80,7 +80,7 @@ A PICO spatial app (PICO OS 6 · Spatial SDK 6.1.9 · Shared Space volume + cont
 - **Real dice**: four pyramid dice pour out of the cup and settle with physics; white tips up = steps (0–4)
 - **Two ways to move**: tap a lit piece on the board, or pick it in the control window and press [Move]; captures, rosettes and bearing off are previewed first
 - **Captures and rosettes**: a captured piece arcs back to its start tower; a rosette gives another throw and protects the piece on it
-- **Opponents**: computer (easy / strong) or two players; undo / redo; hint toggle
+- **Opponents**: computer (easy / smart) or two players; undo / redo; hint toggle
 - **Rules page**: Irving Finkel's reconstruction with a route diagram and common beginner mistakes
 - Works with controller ray, hand ray and eye-hand (gaze + pinch); mute on the main page; Exit app in Settings (with confirmation); Chinese / English; fully offline, no account
 
