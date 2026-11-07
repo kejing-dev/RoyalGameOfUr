@@ -348,6 +348,7 @@ class GameFlow(
     fun cancelPick() {
         if (s.phase != Phase.PICKED) return
         set(s.copy(phase = Phase.PICK, picked = null))
+        onSound(Sound.SELECT) // D51: select / switch / cancel share one soft sound
         log("CANCEL -> S05")
     }
 

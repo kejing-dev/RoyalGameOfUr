@@ -139,16 +139,8 @@ fun BoardScreen() {
             .onSizeChanged { viewSize = it }
             // D50: the factory board-input template (taps + short drags that the system reports as drags, targets
             // resolved up the parent chain) for hand ray, controller ray and eye-hand alike.
-            .boardInput(remember(scene) { BoardTargets(scene) }, remember(graph) { BoardListener(graph) }, BoardInputConfig(logTag = TAG))
-            // D50 hover: a light ring on the square / piece the pointer rests on (state is never changed by hover).
-            .pointerInput(Unit) {
-                detectSpatialPointerEvent(context, TargetEntity.any()) { infos ->
-                    val info = infos.firstOrNull()
-                    if (info != null && !info.isUpEvent()) scene.setHover(BoardTargets(scene).resolveName(info.targetedEntity))
-                    else if (info != null) scene.setHover(null)
-                    false
-                }
-            },
+            // hover (D50): the template's onHover lights a faint ring on the square / piece under the pointer
+            .boardInput(remember(scene) { BoardTargets(scene) }, remember(graph, scene) { BoardListener(graph, scene) }, BoardInputConfig(logTag = TAG)),
         attachments = {
             AttachmentPanel(SEAT) { TagRoot(graph) { st -> SeatTag(st, graph) } }
             AttachmentPanel(DICE) { TagRoot(graph) { st -> DiceTag(st) } }
@@ -200,11 +192,14 @@ internal class BoardTargets(private val scene: BoardScene) : TargetResolver<Stri
 }
 
 /** Every resolved tap goes through [route] (the same calls the panel and the debug broadcast make). */
-internal class BoardListener(private val graph: Graph) : BoardInputListener<String> {
+internal class BoardListener(private val graph: Graph, private val scene: BoardScene) : BoardInputListener<String> {
     override fun onTap(target: String?, source: InputSource, position: Offset3D?) {
         Log.i(TAG, "PINCH target=$target src=${source.label}")
         route(graph, target)
     }
+
+    /** D50 hover: a hint only, never a state change. */
+    override fun onHover(target: String?, source: InputSource) { scene.setHover(target) }
 }
 
 /** Collider name -> the one flow call (the same calls the debug broadcast makes). */

@@ -65,6 +65,12 @@ interface BoardInputListener<T : Any> {
     fun onDragEnd() {}
 
     fun onDragCancel() {}
+
+    /**
+     * Hover (D50 補): the gaze / ray is over [target] (null = over nothing of ours). Called on every hover move, so the
+     * app can expire the highlight when updates stop (pointer left the volume). Hint only — never change game state here.
+     */
+    fun onHover(target: T?, source: InputSource) {}
 }
 
 data class Offset3M(val x: Float, val y: Float, val z: Float) {
@@ -108,6 +114,9 @@ object BoardInputLog {
 /** Shared between the tap and drag detectors so one press is never handled twice. */
 private class TapGuard { @Volatile var lastTapMs = 0L }
 
+/** Last hovered target, so hover changes are logged once. */
+private class HoverState { var last: Any? = null }
+
 /** Walks from [entity] up its parents until [resolver] recognises one. */
 fun <T : Any> resolveUp(entity: Entity?, resolver: TargetResolver<T>, maxDepth: Int = 10): Pair<T?, String> {
     var e = entity
@@ -146,12 +155,20 @@ fun <T : Any> Modifier.boardInput(
     fun toMeters(o: Offset3D) = Offset3M(pxToM(o.x), -pxToM(o.y), pxToM(o.z))
     val tag = config.logTag
     val guard = androidx.compose.runtime.remember { TapGuard() }
+    val hover = androidx.compose.runtime.remember { HoverState() }
     fun log(msg: String) { if (BoardInputLog.enabled) BoardInputLog.write(tag, msg) }
 
     this
         // 1. raw pointer events: logging only (source, pressed, hit entity), never consumed
         .pointerInput(Unit) {
             detectSpatialPointerEvent(context, TargetEntity.any()) { infos ->
+                // hover: not pressed, not a down / up -> highlight what the pointer is over
+                infos.lastOrNull { !it.pressed && !it.isDownEvent() && !it.isUpEvent() }?.let { h ->
+                    val (hit, _) = resolveUp(h.targetedEntity, currentResolver, config.maxResolveDepth)
+                    val src = InputSource.of(h.kind)
+                    if (hit != hover.last) { hover.last = hit; log("HOVER src=${src.label} hit=$hit") }
+                    currentListener.onHover(hit, src)
+                }
                 if (BoardInputLog.enabled && BoardInputLog.verbosePointer) {
                     for (i in infos) {
                         if (i.isDownEvent() || i.isUpEvent()) {
