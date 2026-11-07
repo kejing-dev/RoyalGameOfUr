@@ -28,13 +28,14 @@ import kotlinx.coroutines.launch
  *
  *   goto S01..S16          reach a named state (AGENTS.md lists what each sets up; S04 / S07 / S08 / S09 / S15 are held by freeze)
  *   roll N                 the next throw shows exactly N white tips (0-4)      cup   pinch the cup (= [掷骰])
- *   tap <collider>         a pinch on a collider: cup, tray, board, sq:B3, pc:0:5, tw:0:0, tw:1:15
+ *   tap <collider>         a pinch on a holder: cup, tray, sq:B3, pc:0:5, tw:0:0, tw:1:15
  *   pick P                 pinch the near / current side's piece at progress P (0 = start tower)    move   [走这颗]   cancel
  *   new "ai easy me" | "ai smart them" | "2p - random"     setup "<14 hex digits> [side]" (near 7 then far 7, 0..f)
  *   undo · redo · hint on|off · resign · restart · confirm · no · exitask · more on|off · page play|new|rules|settings
  *   lang zh|en|system · tilt 0|15|25 · sound on|off · volume 0-2 · reduced on|off · coach on|off · seed N
  *   freeze MS|off (animations stop at MS, notices hold) · hold on|off (AI waits) · s00hold on|off · welcome
  *   reopen · closepanel · dump|state · evidence
+ *   replay <target> [hand-ray|eye-hand|controller]   real scene entities -> resolveUp -> the template onTap (input-replay.txt)
  */
 class DebugCommandReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -94,6 +95,23 @@ class DebugCommandReceiver : BroadcastReceiver() {
             "roll" -> flow.forcedRoll = a.toIntOrNull()?.coerceIn(0, 4)
             "cup" -> flow.tapCup()
             "tap" -> route(graph, a)
+            // replay <target> [hand-ray|eye-hand|controller]: the real scene entities a ray lands on for that target (holder,
+            // rim marker, deepest GLB mesh) through the template's resolveUp, then the deepest one into the same onTap
+            "replay" -> {
+                val scene = SceneHolder.scene ?: run { Log.w(TAG, "REPLAY not ready"); return }
+                val f = a.split(" ").filter { it.isNotBlank() }
+                val src = io.embodit.royalur.ui.board.input.InputSource.entries.firstOrNull { it.label == f.getOrNull(1) }
+                    ?: io.embodit.royalur.ui.board.input.InputSource.HAND_RAY
+                var last: String? = null
+                val ents = scene.replayEntities(f.getOrNull(0).orEmpty())
+                if (ents.isEmpty()) io.embodit.royalur.ui.board.input.BoardInputLog.write(TAG, "REPLAY ${f.getOrNull(0)} src=${src.label} no entity")
+                for (e in ents) {
+                    val (t, path) = io.embodit.royalur.ui.board.input.resolveUp(e, io.embodit.royalur.ui.board.BoardTargets())
+                    io.embodit.royalur.ui.board.input.BoardInputLog.write(TAG, "REPLAY ${f.getOrNull(0)} src=${src.label} entity=${e.getName()} path=$path -> square=${io.embodit.royalur.ui.board.BoardTargets.squareOf(t)}")
+                    last = t
+                }
+                if (ents.isNotEmpty()) io.embodit.royalur.ui.board.BoardListener(graph, scene).onTap(last, src, null)
+            }
             "hover" -> SceneHolder.scene?.setHover(a.ifBlank { null }?.takeIf { it != "off" })
             "pick" -> a.toIntOrNull()?.let { flow.tapPiece(flow.state.value.side, it) }
             "move" -> flow.moveButton()

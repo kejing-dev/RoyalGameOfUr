@@ -30,6 +30,8 @@ class SpatialApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // board-input template: mirror input lines into files/input-log.txt (headset logcat drops lines)
+        io.embodit.royalur.ui.board.input.BoardInputLog.attach(this)
         graph = Graph(this)
         launch(::mainApp)
     }

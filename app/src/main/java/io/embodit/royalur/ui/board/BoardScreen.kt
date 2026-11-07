@@ -140,7 +140,7 @@ fun BoardScreen() {
             // D50: the factory board-input template (taps + short drags that the system reports as drags, targets
             // resolved up the parent chain) for hand ray, controller ray and eye-hand alike.
             // hover (D50): the template's onHover lights a faint ring on the square / piece under the pointer
-            .boardInput(remember(scene) { BoardTargets(scene) }, remember(graph, scene) { BoardListener(graph, scene) }, BoardInputConfig(logTag = TAG)),
+            .boardInput(remember { BoardTargets() }, remember(graph, scene) { BoardListener(graph, scene) }, BoardInputConfig(logTag = TAG)),
         attachments = {
             AttachmentPanel(SEAT) { TagRoot(graph) { st -> SeatTag(st, graph) } }
             AttachmentPanel(DICE) { TagRoot(graph) { st -> DiceTag(st) } }
@@ -179,22 +179,31 @@ fun BoardScreen() {
     )
 }
 
-/** Hit entity (or an ancestor) -> the collider name the game knows: squares, pieces (via their collider child), towers, cup, tray, board. */
-internal class BoardTargets(private val scene: BoardScene) : TargetResolver<String> {
-    override fun resolve(entity: Entity): String? {
-        val name = runCatching { entity.getName() }.getOrNull() ?: return null
-        if (BoardScene.hitOf(name) != BoardScene.Companion.EmptyHit) return name
-        scene.colliderNameOf(entity)?.let { return it }
-        return if (name == "board" || name == "boardModel") "board" else null
-    }
+/** Hit entity (or an ancestor) -> the holder name the game knows: squares, pieces, towers, cup, tray (the board body takes no hits). */
+internal class BoardTargets : TargetResolver<String> by TargetResolver.byName(::targetOf) {
+    companion object {
+        /** A hit node's name -> our target (holders are named after it; marker / GLB children resolve via their parents). */
+        fun targetOf(name: String): String? = name.takeIf { BoardScene.hitOf(it) != BoardScene.Companion.EmptyHit }
 
-    fun resolveName(entity: Entity?): String? = io.embodit.royalur.ui.board.input.resolveUp(entity, this).first
+        /** Hit replay (build.md 命中回放): [path] = the hit node's name first, then its parents'. */
+        fun resolvePath(path: List<String>): String? = io.embodit.royalur.ui.board.input.resolvePath(path, ::targetOf)
+
+        /** The square a target stands for (input-log `square=`): a square, a piece's square, a tower / cup / tray, or "-". */
+        fun squareOf(target: String?): String = when (val h = BoardScene.hitOf(target)) {
+            is BoardScene.Companion.SquareHit -> h.sq.name
+            is BoardScene.Companion.PieceHit -> if (h.p in 1..14) io.embodit.royalur.domain.Ur.square(h.side, h.p).name else "tw:${h.side}:${h.p}"
+            BoardScene.Companion.CupHit -> "cup"
+            BoardScene.Companion.TrayHit -> "tray"
+            BoardScene.Companion.EmptyHit -> "-"
+        }
+    }
 }
 
 /** Every resolved tap goes through [route] (the same calls the panel and the debug broadcast make). */
 internal class BoardListener(private val graph: Graph, private val scene: BoardScene) : BoardInputListener<String> {
     override fun onTap(target: String?, source: InputSource, position: Offset3D?) {
         Log.i(TAG, "PINCH target=$target src=${source.label}")
+        io.embodit.royalur.ui.board.input.BoardInputLog.write(TAG, "INPUT tap src=${source.label} target=$target -> square=${BoardTargets.squareOf(target)}")
         route(graph, target)
     }
 
@@ -203,8 +212,10 @@ internal class BoardListener(private val graph: Graph, private val scene: BoardS
 }
 
 /** Collider name -> the one flow call (the same calls the debug broadcast makes). */
-internal fun route(graph: Graph, name: String?) {
-    val flow = graph.flow
+internal fun route(graph: Graph, name: String?) = routeFlow(graph.flow, name)
+
+/** [route] without the Android graph (hit-replay unit tests drive a bare GameFlow through it). */
+internal fun routeFlow(flow: io.embodit.royalur.domain.GameFlow, name: String?) {
     when (val h = BoardScene.hitOf(name)) {
         is BoardScene.Companion.PieceHit -> flow.tapPiece(h.side, h.p)
         is BoardScene.Companion.SquareHit -> flow.tapSquare(h.sq)

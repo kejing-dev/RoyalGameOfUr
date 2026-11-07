@@ -2,18 +2,16 @@ package io.embodit.royalur.ui.board
 
 import android.os.SystemClock
 import android.util.Log
-import com.pico.spatial.core.ecs.CollisionComponent
 import com.pico.spatial.core.ecs.DirectionalLightComponent
 import com.pico.spatial.core.ecs.Entity
-import com.pico.spatial.core.ecs.InteractableComponent
 import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.ModelEntity
 import com.pico.spatial.core.ecs.resource.Material
 import com.pico.spatial.core.ecs.resource.MeshResource
-import com.pico.spatial.core.ecs.resource.ShapeResource
 import com.pico.spatial.core.math.Color4
 import com.pico.spatial.core.math.Quat
 import com.pico.spatial.core.math.Vector3
+import io.embodit.royalur.ui.board.input.GazeTargets
 import io.embodit.royalur.domain.GameFlow
 import io.embodit.royalur.domain.Layout
 import io.embodit.royalur.domain.Move
@@ -45,9 +43,10 @@ internal class Models(
  * root (volume centre)
  * └ sceneRoot (volume floor)
  *   ├ tiltRoot (near-bottom board edge, tipped about X)
- *   │ └ boardRoot (box top centre): board.glb, 20 square colliders "sq:A1", board collider "board", the far side's 2 towers
- *   ├ your 2 towers (beside the board, flat), tray, cup pivot (cup.glb + collider "cup"), 4 dice
- *   ├ 14 pieces (collider children "pc:<side>:<p>" / "tw:<side>:0|15") and all rings: scene children, tipped with the
+ *   │ └ boardRoot (box top centre): board.glb (takes no hits), 20 square holders "sq:A1" (GazeTargets: collider +
+ *   │     Interactable + HoverEffect, rim-frame marker children "mk:sq:A1:0..3"), the far side's 2 tower holders "tw:1:*"
+ *   ├ your 2 tower holders "tw:0:0|15", tray holder "tray", cup pivot > holder "cup" (each holder: the GLB as child), 4 dice
+ *   ├ 14 pieces (the GLB clone root is the holder, named "pc:<side>:<p>" / "tw:<side>:0|15") and all rings, tipped with the
  *   │   board when they stand on it
  *   └ seat tag, dice tag (AttachmentPanels in the low zone in front), key light
  * ```
@@ -75,7 +74,6 @@ internal class BoardScene {
     private val pieces = List(2) { ArrayList<Entity>() }
     private val pieceColliders = List(2) { ArrayList<Entity>() }
     private val colliderNames = HashMap<Entity, String>()
-    private val nearTowers = ArrayList<Entity>()
     private val litRings = ArrayList<ModelEntity>()
     private var selectRing: ModelEntity? = null
     private var targetRing: ModelEntity? = null
@@ -96,13 +94,6 @@ internal class BoardScene {
         if (name == hover) return
         hover = name
         if (name != null) Log.i(TAG, "HOVER $name")
-    }
-
-    /** The collider name of a piece entity (its collider child), for hits on the piece's GLB meshes. */
-    fun colliderNameOf(e: Entity): String? {
-        for (side in 0..1) pieces[side].forEachIndexed { i, p -> if (p === e) return colliderNames[pieceColliders[side][i]] }
-        nearTowers.forEach { t -> if (t === e) return t.getName().replace("towerBase", "tw") }
-        return null
     }
 
     private var clock = 0f
@@ -149,11 +140,6 @@ internal class BoardScene {
         Log.i(TAG, "SCENE fallback shown S00")
     }
 
-    private fun collider(name: String, shape: ShapeResource, r: SceneResources): Entity = Entity().apply {
-        setName(name)
-        components.set(CollisionComponent(collisionShape = listOf(shape), physicsMaterial = r.physics))
-        components.set(InteractableComponent())
-    }
 
     private fun clone(e: Entity): Entity = e.clone(Entity.CloneOptions(recursive = true, shouldShareMaterialInstance = true))!!.also { it.enabled = true }
 
@@ -170,30 +156,26 @@ internal class BoardScene {
         res = r
         val t0 = SystemClock.elapsedRealtime()
         boardRoot.addChild(clone(models.board).apply { setName("boardModel") })
-        boardRoot.addChild(collider("board", r.boardShape, r).also { place(it, V3(0f, -Layout.BOX_T / 2, 0f)) })
-        for (sq in Ur.SQUARES) boardRoot.addChild(collider("sq:${sq.name}", r.squareShape, r).also { place(it, lay.square(sq) + V3(0f, 0.0015f, 0f)) })
-        // the far side's towers in the A-row gaps (tip with the board)
-        for (finish in listOf(false, true)) {
-            val base = clone(models.tower).apply { setName("towerBase:1:${if (finish) 15 else 0}") }
-            place(base, lay.farTower(finish))
-            base.addChild(collider("tw:1:${if (finish) 15 else 0}", r.towerShape, r).also { place(it, V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
-            boardRoot.addChild(base)
-        }
-        // your towers beside the board (q1-1: nothing tall in front of or inside the near row)
-        for (finish in listOf(false, true)) {
-            val base = clone(models.tower).apply { setName("towerBase:0:${if (finish) 15 else 0}") }
-            place(base, if (finish) Layout.NEAR_FINISH else Layout.NEAR_START)
-            base.addChild(collider("tw:0:${if (finish) 15 else 0}", r.towerShape, r).also { place(it, V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
-            sceneRoot.addChild(base)
-            nearTowers += base
+        // v0.1.4 gaze targets (template GazeTargets): the board body takes no hits; every square is a holder with a
+        // visible rim frame the system hover draws on; pieces, towers, tray and cup carry the three components themselves.
+        GazeTargets.cells(boardRoot, Ur.SQUARES.associate { sq -> "sq:${sq.name}" to lay.square(sq).let { Vector3(it.x, it.y, it.z) } },
+            r.squareShape, r.physics, r.markerParts, r.marker)
+        // the far side's towers in the A-row gaps (tip with the board); your towers beside the board (q1-1)
+        for (side in 0..1) for (finish in listOf(false, true)) {
+            val name = "tw:$side:${if (finish) 15 else 0}"
+            val holder = GazeTargets.install(Entity().apply { setName(name) }, r.towerShape, r.physics)
+            val base = if (side == Ur.NEAR) (if (finish) Layout.NEAR_FINISH else Layout.NEAR_START) else lay.farTower(finish)
+            place(holder, base + V3(0f, SceneResources.TOWER_COLLIDER_H / 2, 0f))
+            holder.addChild(clone(models.tower).apply { setName("towerModel"); place(this, V3(0f, -SceneResources.TOWER_COLLIDER_H / 2, 0f)) })
+            (if (side == Ur.NEAR) sceneRoot else boardRoot).addChild(holder)
         }
         for (side in 0..1) repeat(Ur.PIECES) { i ->
-            val e = clone(if (side == Ur.NEAR) models.pieceNear else models.pieceFar).apply { setName("piece:$side:$i") }
-            val c = collider("pc:$side:x", r.pieceShape, r)
-            e.addChild(c)
+            // the clone root holds the meshes, so it is the hit holder; its name follows where it stands ("pc:" / "tw:")
+            val e = clone(if (side == Ur.NEAR) models.pieceNear else models.pieceFar).apply { setName("pc:$side:x") }
+            GazeTargets.install(e, r.pieceShape, r.physics)
             sceneRoot.addChild(e)
             pieces[side] += e
-            pieceColliders[side] += c
+            pieceColliders[side] += e
         }
         repeat(Ur.PIECES) { i -> litRings += ring(r.ringPiece, r.cream, "litRing:$i", r.haloPiece, r) }
         selectRing = ring(r.ringSelect, r.cream, "selectRing", r.haloSelect, r)
@@ -204,12 +186,17 @@ internal class BoardScene {
         glowPlane = ring(r.glowPlane, r.glow, "rosetteGlow", null, r)
         hoverRing = ring(r.ringSquare, r.creamFaint, "hoverRing", null, r)
 
-        sceneRoot.addChild(clone(models.tray).apply { setName("trayModel"); place(this, lay.trayCentre()) })
-        sceneRoot.addChild(collider("tray", r.trayShape, r).also { place(it, lay.trayCentre() + V3(0f, Layout.TRAY_H / 2, 0f)) })
+        val tray = GazeTargets.install(Entity().apply { setName("tray") }, r.trayShape, r.physics)
+        place(tray, lay.trayCentre() + V3(0f, Layout.TRAY_H / 2, 0f))
+        tray.addChild(clone(models.tray).apply { setName("trayModel"); place(this, V3(0f, -Layout.TRAY_H / 2, 0f)) })
+        sceneRoot.addChild(tray)
         val pivot = Entity().apply { setName("cupPivot") }
         place(pivot, lay.cupBase())
-        pivot.addChild(clone(models.cup).apply { setName("cupModel") })
-        pivot.addChild(collider("cup", r.cupShape, r).also { place(it, V3(0f, 0.04f, 0f)) })
+        val cupH = (Layout.CUP_H + 0.01f) / 2
+        val cup = GazeTargets.install(Entity().apply { setName("cup") }, r.cupShape, r.physics)
+        place(cup, V3(0f, cupH, 0f))
+        cup.addChild(clone(models.cup).apply { setName("cupModel"); place(this, V3(0f, -cupH, 0f)) })
+        pivot.addChild(cup)
         sceneRoot.addChild(pivot)
         cupPivot = pivot
         cupRing = ModelEntity(r.ringCup, r.cream).apply { setName("cupRing"); enabled = false; place(this, lay.cupBase() + V3(0f, 0.002f, 0f)); sceneRoot.addChild(this) }
@@ -404,7 +391,7 @@ internal class BoardScene {
                 val key = "${glowSq.name}:${st.turnNo}:${st.rosettes}"
                 if (key != glowKey) { glowKey = key; glowStart = now }
                 val k = if (reduced) 1f else (elapsed(glowStart).toFloat() / 400f).coerceIn(0.05f, 1f)
-                place(g, lay.squareSpot(glowSq, 0.0009f), planeQ)
+                place(g, lay.squareSpot(glowSq, 0.0017f), planeQ)
                 g.transform().setScaleVector(Vector3(k, k, 1f))
                 g.enabled = true
             } else { g.enabled = false; glowKey = null }
@@ -449,7 +436,7 @@ internal class BoardScene {
                     val f0 = thr.frames.first()
                     val start = V3(lane.x + f0.position[0].toFloat(), lane.y + f0.position[1].toFloat(), lane.z + f0.position[2].toFloat())
                     if (de < rel + 120) {
-                        val mouth = Layout.CUP_POUR + V3(-0.045f, 0.09f, 0f)
+                        val mouth = Layout.CUP_POUR + V3(-0.04f, 0.065f, 0f)
                         mouth.lerp(start, (de - rel) / 120f) to f0.quaternion
                     } else {
                         val p = thr.sample((de - rel - 120) * speed / 1000.0)
@@ -491,6 +478,21 @@ internal class BoardScene {
         }
     }
 
+    /**
+     * Debug hit replay (template README 必带单测 4): every real scene entity a ray can land on for [target] — the holder
+     * and its deepest child (the square's rim marker, a piece's / tower's / cup's GLB mesh node).
+     */
+    fun replayEntities(target: String): List<Entity> {
+        val out = ArrayList<Entity>()
+        fun deepest(e: Entity): Entity { var x = e; while (x.getChildren().iterator().hasNext()) x = x.getChildren().first(); return x }
+        fun visit(e: Entity) {
+            if (runCatching { e.getName() }.getOrNull() == target && e.enabled) { out += e; deepest(e).takeIf { it !== e }?.let { out += it } }
+            e.getChildren().forEach { visit(it) }
+        }
+        visit(root)
+        return out
+    }
+
     fun evidence(): String {
         val dz = dice.mapIndexed { i, d -> "d$i=${if (d.enabled) d.transform().position else "off"}" }.joinToString(" ")
         return "tilt=${lay.tiltDeg} seat=${lay.seatCentre()} diceTag=${lay.diceTagCentre()} cup=${lay.cupBase()} nearStart=${Layout.NEAR_START} " +
@@ -515,8 +517,11 @@ internal class BoardScene {
             if (name == null) return EmptyHit
             val f = name.split(":")
             return when (f[0]) {
-                "pc" -> f.getOrNull(2)?.toIntOrNull()?.let { PieceHit(f[1].toInt(), it) } ?: EmptyHit
-                "tw" -> PieceHit(f[1].toInt(), f[2].toInt())
+                // out-of-range names resolve to nothing (a naming bug shows in the log instead of mapping wrong)
+                "pc" -> { val side = f.getOrNull(1)?.toIntOrNull(); val p = f.getOrNull(2)?.toIntOrNull()
+                    if (side in 0..1 && p in 1..14) PieceHit(side!!, p!!) else EmptyHit }
+                "tw" -> { val side = f.getOrNull(1)?.toIntOrNull(); val p = f.getOrNull(2)?.toIntOrNull()
+                    if (side in 0..1 && (p == 0 || p == 15)) PieceHit(side!!, p!!) else EmptyHit }
                 "sq" -> Sq.parse(f[1])?.let { SquareHit(it) } ?: EmptyHit
                 "cup" -> CupHit
                 "tray" -> TrayHit

@@ -72,8 +72,11 @@ class Layout(val tiltDeg: Int = 15) {
         const val TRAY_D = 0.12f
         const val TRAY_H = 0.015f
         const val TRAY_FLOOR = 0.005f
-        const val CUP_R = 0.04f
-        const val CUP_H = 0.07f
+        /** v0.1.4 headset feedback: lower (7 -> 5 cm) and slimmer (base r 4 -> 3.6 cm) so rays to the finish tower clear it. */
+        const val CUP_R = 0.036f
+        const val CUP_H = 0.05f
+        /** Cup tap collider (wider than the cup) and its obstacle box. */
+        const val CUP_BOX = 0.082f
         const val STEP_ARC = 0.03f
         const val CAPTURE_ARC = 0.12f
         /** Low zone in front of the board (design occlusionRule rule 1). */
@@ -85,7 +88,8 @@ class Layout(val tiltDeg: Int = 15) {
         const val DICE_W_DP = 64
         const val DICE_H_DP = 38
         val TRAY = V3(0.16f, 0f, 0.195f + D_Z)
-        val CUP = V3(0.335f, 0f, 0.035f + D_Z)
+        /** v0.1.4: 2 cm nearer the board's right edge and 7 mm toward you (front edge at the rule-2 limit z +0.08). */
+        val CUP = V3(0.315f, 0f, 0.039f + D_Z)
         /** Where the cup slides to pour (over the tray's right end). */
         val CUP_POUR = V3(0.30f, 0f, 0.17f + D_Z)
         val NEAR_START = V3(-0.32f, 0f, 0.03f + D_Z)
@@ -176,7 +180,7 @@ class Layout(val tiltDeg: Int = 15) {
             val n = if (finish) NEAR_FINISH else NEAR_START
             out += Obstacle("near tower ${if (finish) "finish" else "start"}", Box3(n + V3(-TOWER_W / 2, 0f, -TOWER_W / 2), n + V3(TOWER_W / 2, th, TOWER_W / 2)), false)
         }
-        out += Obstacle("cup", Box3.around(CUP + V3(0f, 0.0375f, 0f), V3(0.09f, 0.075f, 0.09f)), false)
+        out += Obstacle("cup", Box3.around(CUP + V3(0f, (CUP_H + 0.005f) / 2, 0f), V3(CUP_BOX, CUP_H + 0.005f, CUP_BOX)), false)
         out += Obstacle("tray+dice", Box3.around(TRAY + V3(0f, 0.012f, 0f), V3(TRAY_W, 0.024f, TRAY_D)), false)
         val s = seatSize(); val d = diceTagSize()
         out += Obstacle("seat tag", Box3.around(seatCentre(), V3(s.x, s.y, 0.004f)), false)
